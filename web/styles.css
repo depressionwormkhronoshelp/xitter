@@ -737,3 +737,22 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 .send svg { width: 18px; height: 18px; stroke-width: 2.8; }
 .chat-empty .avatar { width: 76px; height: 76px; font-size: 28px; }
 @media (min-width: 900px) { .chat-head .back { visibility: hidden; } }
+
+/* записи о звонках */
+.callbubble { display: flex; align-items: center; gap: 10px; padding: 9px 16px 9px 10px; cursor: pointer; min-width: 220px; }
+.cb-icon {
+  width: 34px; height: 34px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  background: rgba(255, 255, 255, 0.24);
+}
+.them .cb-icon { background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--accent); }
+.cb-icon svg { width: 18px; height: 18px; }
+.cb-text { display: grid; line-height: 1.2; text-align: left; }
+.cb-text b { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.cb-text small { font-size: 13px; opacity: 0.75; margin-top: 2px; }
+.callrow { display: flex; align-items: center; gap: 10px; padding: 6px 4px; cursor: pointer; color: var(--text); }
+.callrow .cr-icon { width: 26px; height: 26px; display: grid; place-items: center; color: #8e8e93; flex: none; }
+.callrow .cr-icon svg { width: 22px; height: 22px; }
+.callrow.missed .cr-icon { color: #ff3b30; }
+.callrow .cb-text b { font-size: 15px; font-weight: 500; }
+.callrow .cb-text small { color: #8e8e93; opacity: 1; }
+.callbubble:active, .callrow:active { opacity: 0.6; }

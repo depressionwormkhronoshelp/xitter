@@ -279,13 +279,14 @@
     );
   }
 
-  function send(chatId, text) {
+  // extra: необязательные поля, например { kind: 'call', call: { video, result, duration } }
+  function send(chatId, text, extra) {
     text = String(text || '').trim().slice(0, 4000);
     const c = rawChats.get(chatId);
     if (!text || !c) return;
     const ts = Date.now();
     const b = writeBatch(db);
-    b.set(doc(collection(db, 'chats', chatId, 'messages')), { from: me, text, ts });
+    b.set(doc(collection(db, 'chats', chatId, 'messages')), { ...(extra || {}), from: me, text, ts });
     const upd = { lastMessage: { text, from: me, ts }, updatedAt: ts, [`lastRead.${me}`]: ts, [`typing.${me}`]: deleteField() };
     c.members.forEach((m) => { if (m !== me) upd[`unread.${m}`] = increment(1); });
     b.update(doc(db, 'chats', chatId), upd);

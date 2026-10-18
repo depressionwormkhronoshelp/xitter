@@ -425,6 +425,35 @@
     $('#callBtns').hidden = chat.type !== 'dm';
   }
 
+  // подписи для записей о звонках (mine — звонил я)
+  function callLabel(info, mine) {
+    const kind = info.video ? 'Видеовызов' : 'Голосовой вызов';
+    const kindLow = info.video ? 'видеовызов' : 'голосовой вызов';
+    const dur = `${Math.floor(info.duration / 60)}:${String(info.duration % 60).padStart(2, '0')}`;
+    switch (info.result) {
+      case 'ended': return { title: `${kind} завершён`, sub: dur, ok: true };
+      case 'declined': return { title: mine ? `${kind} отклонён` : 'Вы отклонили вызов' };
+      case 'busy': return { title: mine ? 'Абонент был занят' : `Пропущенный ${kindLow}` };
+      case 'missed': return { title: mine ? `${kind}: нет ответа` : `Пропущенный ${kindLow}` };
+      default: return { title: mine ? `${kind} отменён` : `Пропущенный ${kindLow}` };
+    }
+  }
+  const ICON_PHONE = '<svg viewBox="0 0 24 24"><path d="M5 4h3.5l1.8 4.5-2.3 1.4a11 11 0 0 0 6.1 6.1l1.4-2.3L20 15.5V19a1.5 1.5 0 0 1-1.6 1.5C10.6 20 4 13.4 3.5 5.6A1.5 1.5 0 0 1 5 4z" fill="currentColor" stroke="none"/></svg>';
+  const ICON_VIDEO = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="13" height="12" rx="3" fill="currentColor" stroke="none"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z" fill="currentColor" stroke="none"/></svg>';
+  const ICON_MISSED_IN = '<svg viewBox="0 0 24 24"><path d="M7 15.5c3.5-3 6.5-3 10 0l-1.6 2-2.4-1v-1.7a5 5 0 0 0-2 0v1.7l-2.4 1z" fill="currentColor" stroke="none"/><path d="M8 4l4 4 4-4M12 8V3" stroke-width="1.8"/></svg>';
+  function callMessageHTML(m, mine) {
+    const info = m.call || {};
+    const l = callLabel(info, mine);
+    if (l.ok) {
+      return `<div class="bubble callbubble" data-recall="${info.video ? 'video' : 'audio'}">
+        <span class="cb-icon">${info.video ? ICON_VIDEO : ICON_PHONE}</span>
+        <span class="cb-text"><b>${esc(l.title)}</b><small>${esc(l.sub)}</small></span></div>`;
+    }
+    return `<div class="callrow ${mine ? '' : 'missed'}" data-recall="${info.video ? 'video' : 'audio'}">
+      <span class="cr-icon">${mine ? (info.video ? ICON_VIDEO : ICON_PHONE) : ICON_MISSED_IN}</span>
+      <span class="cb-text"><b>${esc(l.title)}</b><small>Нажмите, чтобы перезвонить</small></span></div>`;
+  }
+
   let animateIds = new Set();
   function renderMessages(jump) {
     const box = $('#messages');
@@ -452,7 +481,7 @@
       const sender = isGroup && !mine && first ? (chat.members.find((x) => x && x.id === m.from) || {}).name : null;
       html += `<div class="msg ${mine ? 'me' : 'them'} ${tail ? 'tail' : ''} ${animateIds.has(m.id) ? 'new' : ''} ${m.pending ? 'pending' : ''}" data-id="${m.id}" title="${fmtTime(m.ts)}">
         ${sender ? `<div class="sender">${esc(sender)}</div>` : ''}
-        <div class="bubble ${emojiOnly(m.text) ? 'emoji-only' : ''}">${esc(m.text)}</div>
+        ${m.kind === 'call' ? callMessageHTML(m, mine) : `<div class="bubble ${emojiOnly(m.text) ? 'emoji-only' : ''}">${esc(m.text)}</div>`}
       </div>`;
       if (i === lastMine && i === msgs.length - 1) {
         const read = !m.pending && isReadByOthers(chat, m);
@@ -466,6 +495,13 @@
     animateIds.clear();
     if (jump || nearBottom) box.scrollTop = box.scrollHeight;
   }
+
+  $('#messages').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-recall]');
+    if (!el) return;
+    haptic(8);
+    Call.start(el.dataset.recall === 'video');
+  });
 
   // поле ввода
   const input = $('#msgInput');
@@ -808,7 +844,7 @@
         const offer = await c.pc.createOffer();
         await c.pc.setLocalDescription(offer);
         wsSend({ type: 'call:offer', to: peer.id, callId: c.id, chatId: chat.id, video, sdp: c.pc.localDescription });
-        c.timeout = setTimeout(() => end('Нет ответа', 'Пропущенный звонок'), 45000);
+        c.timeout = setTimeout(() => end('Нет ответа', 'missed'), 45000);
       } catch (e) {
         toast(e.message);
         end(null);
@@ -846,14 +882,11 @@
       if (!c) return;
       wsSend({ type: 'call:end', to: c.peer.id, callId: c.id });
       if (c.outgoing) {
-        let text = logText;
-        if (!text) {
-          if (c.startedAt) {
-            const s = Math.floor((Date.now() - c.startedAt) / 1000);
-            text = `${c.video ? '🎥 Видеозвонок' : '📞 Аудиозвонок'} · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-          } else text = 'Отменённый звонок';
-        } else text = (c.video ? '🎥 ' : '📞 ') + text;
-        sendText(c.chatId, text);
+        // запись о звонке в чате: result = ended | cancelled | missed | declined | busy
+        const result = logText || (c.startedAt ? 'ended' : 'cancelled');
+        const duration = c.startedAt ? Math.floor((Date.now() - c.startedAt) / 1000) : 0;
+        const info = { video: !!c.video, result, duration };
+        B.send(c.chatId, (c.video ? '🎥 ' : '📞 ') + callLabel(info, true).title, { kind: 'call', call: info });
       }
       if (reason) toast(reason);
       cleanup();
@@ -899,10 +932,10 @@
           else c.ice.push(d.candidate);
           break;
         case 'call:decline':
-          if (c && c.id === d.callId) end('Звонок отклонён', 'Звонок отклонён');
+          if (c && c.id === d.callId) end('Звонок отклонён', 'declined');
           break;
         case 'call:busy':
-          if (c && c.id === d.callId) end('Абонент занят', 'Абонент занят');
+          if (c && c.id === d.callId) end('Абонент занят', 'busy');
           break;
         case 'call:end':
           if (c && c.id === d.callId) { const was = c.startedAt; cleanup(); toast(was ? 'Звонок завершён' : 'Звонок отменён'); }
