@@ -630,6 +630,7 @@
       </div>
       ${p.text ? `<p class="post-text" ${opts.full ? '' : 'data-open'}>${esc(p.text)}</p>` : ''}
       ${p.image ? `<div class="post-img" data-img><img src="${esc(p.image)}" alt="" loading="lazy" /></div>` : ''}
+      ${p.file && p.file.id ? `<div class="bubble file-bubble post-file" data-file="${esc(p.file.id)}"><span class="ficon"><svg><use href="#i-${/^audio\//.test(p.file.type) ? 'play' : 'file'}"/></svg></span><span class="fmeta"><b>${esc(p.file.name)}</b><small>${fmtSize(p.file.size)} · ${/^audio\//.test(p.file.type) ? 'слушать' : /^(video|image)\//.test(p.file.type) ? 'открыть' : 'скачать'}</small></span></div>` : ''}
       <div class="post-actions">
         <button class="like ${liked ? 'on' : ''}" data-like aria-label="Нравится">${HEART}<span>${likes ? num(likes) : ''}</span></button>
         <button data-open aria-label="Комментарии"><svg><use href="#i-comment"/></svg><span>${comments ? num(comments) : ''}</span></button>
@@ -751,6 +752,8 @@
       }
       return;
     }
+    const pf = e.target.closest('[data-file]');
+    if (pf) { openFile(pf.dataset.file, pf); return; }
     if (e.target.closest('[data-open]')) openPost(id);
   }
   ['#feedList', '#meProfile', '#userProfile', '#postView'].forEach((s) => $(s).addEventListener('click', onPostClick));
@@ -825,9 +828,15 @@
   });
 
   // ---------- новый пост ----------
-  let composeImage = null;
+  let composeImage = null, composeFile = null;
+  function renderComposeFile() {
+    const box = $('#composeFile');
+    box.hidden = !composeFile;
+    if (composeFile) box.querySelector('b').textContent = `${composeFile.name} · ${fmtSize(composeFile.size)}`;
+  }
   function openCompose() {
-    composeImage = null;
+    composeImage = null; composeFile = null;
+    renderComposeFile();
     $('#postText').value = '';
     $('#composeImage').hidden = true;
     setAvatar($('#composeAvatar'), S.me);
@@ -844,12 +853,22 @@
     } catch (e) { toast(e.message); }
   });
   $('#removeImage').addEventListener('click', () => { composeImage = null; $('#composeImage').hidden = true; });
+  // файл к посту: до 20 МБ, с Plus до 50 МБ (как в чатах)
+  $('#addFileBtn').addEventListener('click', async (e) => {
+    const f = await anyFile('');
+    if (!f) return;
+    try {
+      composeFile = await uploadPicked(f, e.currentTarget);
+      renderComposeFile();
+    } catch (err) { toast(err.message); }
+  });
+  $('#removeFile').addEventListener('click', () => { composeFile = null; renderComposeFile(); });
   $('#publishBtn').addEventListener('click', async (e) => {
     const text = $('#postText').value.trim();
-    if (!text && !composeImage) { toast('Напишите что-нибудь или добавьте фото'); return; }
+    if (!text && !composeImage && !composeFile) { toast('Напишите что-нибудь или добавьте фото или файл'); return; }
     if (!canPost()) return;
     try {
-      await busy(e.currentTarget, () => B.createPost({ text, image: composeImage }));
+      await busy(e.currentTarget, () => B.createPost({ text, image: composeImage, file: composeFile }));
       closeSheet();
       if (S.feedMode === 'fav') $('#feedSeg [data-feed="all"]').click();
       switchTab('feed', true);
@@ -2544,14 +2563,34 @@
     let c = null;
     let ringTimer = null, ringOsc = null, durTimer = null;
 
-    function setState(text) { $('#callState').textContent = text; }
+    function setState(text) { $('#callState').textContent = text; $('#callBarTime').textContent = text; }
+    // свернуть звонок: экран прячется, сверху остаётся полоска, звук и видео продолжают идти
+    function minimize() {
+      if (!c || el.classList.contains('incoming')) return;
+      el.classList.add('mini');
+      document.body.classList.remove('calling');
+      document.body.classList.add('call-mini');
+      $('#callBarName').textContent = c.peer.name || c.peer.title || 'Звонок';
+      $('#callBar').hidden = false;
+      if (c.chatId && S.current !== c.chatId && S.chats.has(c.chatId)) openChat(c.chatId);
+    }
+    function restore() {
+      el.classList.remove('mini');
+      document.body.classList.add('calling');
+      document.body.classList.remove('call-mini');
+      $('#callBar').hidden = true;
+    }
+    $('#minBtn').addEventListener('click', minimize);
+    $('#callBar').addEventListener('click', restore);
 
     function show(peer, video, incoming) {
       setAvatar($('#callAvatar'), peer);
       $('#callName').textContent = peer.name || peer.title;
       el.classList.toggle('video', !!video);
       el.classList.toggle('incoming', !!incoming);
-      el.classList.remove('active', 'closing');
+      el.classList.remove('active', 'closing', 'mini');
+      document.body.classList.remove('call-mini');
+      $('#callBar').hidden = true;
       el.hidden = false;
       ['#muteBtn', '#camBtn', '#speakerBtn'].forEach((s) => $(s).classList.remove('on'));
       $('#camBtn').classList.toggle('dim', !video);
@@ -2561,8 +2600,9 @@
     }
     function hide() {
       el.classList.add('closing');
-      document.body.classList.remove('calling');
-      setTimeout(() => { el.hidden = true; el.classList.remove('closing', 'active', 'incoming'); }, 450);
+      document.body.classList.remove('calling', 'call-mini');
+      $('#callBar').hidden = true;
+      setTimeout(() => { el.hidden = true; el.classList.remove('closing', 'active', 'incoming', 'mini'); }, 450);
     }
     function startRing(incoming) {
       stopRing();
@@ -2848,7 +2888,7 @@
       });
     })();
 
-    return { start, onSignal, setTurn, get active() { return !!c; } };
+    return { start, onSignal, setTurn, minimize, get active() { return !!c; } };
   })();
 
   // меню сообщения: правая кнопка мыши, долгое нажатие или клавиша Delete / меню
@@ -2891,7 +2931,7 @@
 
   // системная кнопка «Назад» на Android
   window.__xitterBack = () => {
-    if (document.body.classList.contains('calling')) return true;
+    if (document.body.classList.contains('calling')) { Call.minimize(); return true; }
     if (!$('#viewer').hidden) { $('#viewer').hidden = true; return true; }
     if (document.body.classList.contains('as-open')) { closeActions(); return true; }
     if (openSheetId) { closeSheet(); return true; }

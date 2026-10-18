@@ -344,15 +344,21 @@
   }
 
   // ---------- лента ----------
-  const createPost = wrap(async ({ text, image }) => {
+  const createPost = wrap(async ({ text, image, file }) => {
     text = String(text || '').trim().slice(0, 2000);
-    if (!text && !image) throw new Error('Пост пустой');
+    if (!text && !image && !file) throw new Error('Пост пустой');
     const data = { author: me, text, createdAt: Date.now(), likes: [], commentCount: 0 };
     if (image) data.image = image;
+    if (file && file.id) data.file = { id: String(file.id), name: String(file.name).slice(0, 120), size: +file.size || 0, type: String(file.type || '').slice(0, 80) };
     await addDoc(collection(db, 'posts'), data);
   });
 
-  const deletePost = wrap(async (id) => { await deleteDoc(doc(db, 'posts', id)); });
+  const deletePost = wrap(async (id) => {
+    const p = await getDoc(doc(db, 'posts', id));
+    await deleteDoc(doc(db, 'posts', id));
+    const f = p.exists() && p.data().file;
+    if (f && f.id) deleteFile(f.id).catch(() => {});
+  });
 
   function toggleLike(post) {
     const liked = (post.likes || []).includes(me);
@@ -614,12 +620,7 @@
         const meta = m.data();
         const snap = await getDocs(collection(db, 'files', id, 'chunks'));
         if (snap.size < meta.chunks) throw new Error('Файл ещё загружается');
-        const parts = snap.docs.sort((a, b) => a.id.localeCompare(b.id)).map((d) => {
-          const bin = atob(d.data().d);
-          const u8 = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-          return u8;
-        });
+        const parts = snap.docs.sort((a, b) => a.id.localeCompare(b.id)).map((d) => fromB64(d.data().d));
         const blob = new Blob(parts, { type: meta.type });
         return { url: URL.createObjectURL(blob), name: meta.name, type: meta.type, size: meta.size };
       })();
@@ -627,6 +628,14 @@
       fileCache.set(id, p);
     }
     return fileCache.get(id);
+  }
+
+  // base64 -> байты (встроенный Uint8Array.fromBase64, где он есть)
+  function fromB64(s) {
+    if (Uint8Array.fromBase64) return Uint8Array.fromBase64(s);
+    const bin = atob(s), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return u8;
   }
 
   // ---------- LUNE, Plus и админка ----------

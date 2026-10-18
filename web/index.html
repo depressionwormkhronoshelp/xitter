@@ -322,7 +322,11 @@
           <textarea id="postText" rows="4" maxlength="2000" placeholder="Что нового?"></textarea>
         </div>
         <div class="compose-image" id="composeImage" hidden><img alt="" /><button class="remove" id="removeImage" aria-label="Убрать фото"><svg><use href="#i-close"/></svg></button></div>
-        <button class="btn-soft left" id="addPhotoBtn"><svg><use href="#i-image"/></svg>Добавить фото</button>
+        <div class="compose-file" id="composeFile" hidden><svg><use href="#i-file"/></svg><b></b><button class="remove" id="removeFile" aria-label="Убрать файл"><svg><use href="#i-close"/></svg></button></div>
+        <div class="compose-add">
+          <button class="btn-soft left" id="addPhotoBtn"><svg><use href="#i-image"/></svg>Фото</button>
+          <button class="btn-soft left" id="addFileBtn"><svg><use href="#i-clip"/></svg>Файл</button>
+        </div>
         <input type="file" id="postFile" accept="image/*" hidden />
       </div>
     </div>
@@ -473,10 +477,12 @@
     </div>
 
     <!-- Звонок (как в iOS) -->
+    <button class="call-bar" id="callBar" hidden aria-label="Вернуться к звонку"><i></i><span id="callBarName"></span><b id="callBarTime"></b><small>Вернуться</small></button>
     <div class="call" id="call" hidden>
       <div class="call-bg"></div>
       <video id="remoteVideo" autoplay playsinline></video>
       <video id="localVideo" class="mirror" autoplay playsinline muted></video>
+      <button class="call-min" id="minBtn" aria-label="Свернуть звонок"><svg viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></svg></button>
       <button class="call-i" id="infoBtn" aria-label="Информация"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v6M12 7.5v.01"/></svg></button>
       <div class="call-info">
         <p id="callState"></p>
