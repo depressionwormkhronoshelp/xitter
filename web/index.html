@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="theme-color" content="#FF7A1A" />
+  <meta name="theme-color" content="#ffffff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Xitter" />
   <title>Xitter</title>
   <link rel="manifest" href="manifest.webmanifest" />
@@ -15,247 +15,295 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Фильтр преломления для Liquid Glass (работает в Chromium / Android WebView) -->
+  <!-- Набор иконок -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <filter id="lg-refract" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
-      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise" />
-      <feGaussianBlur in="noise" stdDeviation="2" result="soft" />
-      <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G" />
-    </filter>
+    <defs>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 10.5L12 3.5l8.5 7V20a.6.6 0 0 1-.6.6H15v-6.1H9v6.1H4.1a.6.6 0 0 1-.6-.6z"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16 16"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M12 8v8M8 12h8"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 2H4.4z"/><path d="M10 20.8a2.1 2.1 0 0 0 4 0"/></symbol>
+      <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2s-8-4.7-8-10.4A4.4 4.4 0 0 1 12 7.3a4.4 4.4 0 0 1 8 2.5c0 5.7-8 10.4-8 10.4z"/></symbol>
+      <symbol id="i-comment" viewBox="0 0 24 24"><path d="M4 4.8h16v11.4H9.2L4 20.2z"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5L10.2 13.8"/><path d="M20.5 3.5l-6.3 17-4-6.7-6.7-4z"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 4.5L7.5 12l7.5 7.5"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 3.8h3.6l1.8 4.6-2.4 1.5a11 11 0 0 0 6.1 6.1l1.5-2.4 4.6 1.8v3.6a1.6 1.6 0 0 1-1.7 1.6C10.3 20.3 3.7 13.7 3.4 5.5A1.6 1.6 0 0 1 5 3.8z"/></symbol>
+      <symbol id="i-video" viewBox="0 0 24 24"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.4l6-3.4v10l-6-3.4z"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11.5" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></symbol>
+      <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4.2 4.2 0 0 0 7 0"/><path d="M9.3 9.6v.4M14.7 9.6v.4" stroke-width="2.2"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.7"/><path d="M20.5 15.5l-4.7-4.7L7 19.5"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.5-2-3.4-2.3 1a7.5 7.5 0 0 0-2.6-1.5L14 2.6h-4l-.4 2.5A7.5 7.5 0 0 0 7 6.6l-2.3-1-2 3.4 2 1.5a7.6 7.6 0 0 0 0 3l-2 1.5 2 3.4 2.3-1a7.5 7.5 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 2.6-1.5l2.3 1 2-3.4z"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="13.5" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
+    </defs>
   </svg>
 
-  <div class="bg" aria-hidden="true">
-    <div class="blob b1"></div>
-    <div class="blob b2"></div>
-    <div class="blob b3"></div>
-    <div class="blob b4"></div>
-  </div>
-
   <div id="app">
-    <!-- ======= Вход / регистрация ======= -->
+    <!-- ======= Вход ======= -->
     <section id="auth" class="screen" hidden>
+      <div class="auth-bg"></div>
       <div class="auth-wrap">
-        <div class="logo-mark">
-          <div class="logo glass"><span>X</span></div>
-        </div>
-        <h1 class="auth-title">Xitter</h1>
-        <p class="auth-sub" id="authSub">Сообщения, которые светятся.</p>
+        <h1 class="auth-logo">Xitter</h1>
 
-        <form id="authForm" class="glass card auth-card" autocomplete="on">
-          <div class="seg glass-inset" id="authSeg">
-            <div class="seg-thumb"></div>
-            <button type="button" data-mode="login" class="active">Вход</button>
-            <button type="button" data-mode="register">Регистрация</button>
-          </div>
-
-          <label class="field" id="fieldName" hidden>
-            <span>Имя</span>
-            <input name="name" type="text" placeholder="Как вас называть" autocomplete="name" maxlength="64" />
-          </label>
-          <label class="field">
-            <span>Имя пользователя</span>
-            <input name="username" type="text" placeholder="например, orjs" autocomplete="username" autocapitalize="none" spellcheck="false" required />
-          </label>
-          <label class="field">
-            <span>Пароль</span>
-            <input name="password" type="password" placeholder="не короче 6 символов" autocomplete="current-password" minlength="6" required />
-          </label>
-
-
-          <p class="error" id="authError" role="alert"></p>
-          <button class="btn-primary" type="submit" id="authSubmit"><span>Войти</span></button>
+        <form class="auth-step active" id="stepEmail" novalidate>
+          <h2>Создайте аккаунт</h2>
+          <p>Введите email, чтобы войти или зарегистрироваться</p>
+          <input class="input" id="authEmail" type="text" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="email@domain.com" />
+          <button class="btn-black" type="submit">Продолжить</button>
+          <div class="or"><span>или</span></div>
+          <button class="btn-soft" type="button" id="googleBtn">
+            <svg viewBox="0 0 24 24" class="brand"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.8h3.6c2.1-1.9 3.3-4.8 3.3-8.1z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.8c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.9A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 0 1 0-4.2V7H2.1a11 11 0 0 0 0 10z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7l3.7 2.9C6.7 7.3 9.1 5.4 12 5.4z"/></svg>
+            Продолжить с Google
+          </button>
+          <button class="btn-soft" type="button" id="appleBtn">
+            <svg viewBox="0 0 24 24" class="brand"><path fill="currentColor" d="M16.4 12.6c0-2.4 2-3.5 2-3.6a4.3 4.3 0 0 0-3.4-1.8c-1.4-.2-2.8.8-3.5.8-.7 0-1.9-.8-3-.8a4.6 4.6 0 0 0-3.9 2.4c-1.7 2.9-.4 7.2 1.2 9.6.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.1.8 1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.8-1-2.8-4zM14.1 5.6c.6-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.6 2.8-1.4z"/></svg>
+            Продолжить с Apple
+          </button>
+          <p class="fine">Нажимая «Продолжить», вы принимаете <b>Условия использования</b> и <b>Политику конфиденциальности</b></p>
         </form>
+
+        <form class="auth-step" id="stepPassword" novalidate>
+          <button class="auth-back" type="button" data-back="stepEmail"><svg><use href="#i-back"/></svg></button>
+          <h2>Введите пароль</h2>
+          <p id="pwHint">Если аккаунта ещё нет, мы его создадим</p>
+          <input class="input" id="authPassword" type="password" autocomplete="current-password" placeholder="Пароль, от 6 символов" />
+          <button class="btn-black" type="submit"><span>Продолжить</span></button>
+        </form>
+
+        <form class="auth-step" id="stepProfile" novalidate>
+          <h2>Как вас называть?</h2>
+          <p>Имя видят все, а по @username вас найдут друзья</p>
+          <input class="input" id="profName" type="text" autocomplete="name" maxlength="64" placeholder="Имя" />
+          <input class="input" id="profUsername" type="text" autocapitalize="none" spellcheck="false" maxlength="24" placeholder="@username" />
+          <button class="btn-black" type="submit"><span>Готово</span></button>
+          <button class="link-btn" type="button" id="profLogout">Выйти</button>
+        </form>
+
+        <p class="auth-error" id="authError" role="alert"></p>
         <a class="dl-link" id="apkLink" href="download/Xitter.apk" hidden>Скачать приложение для Android</a>
       </div>
     </section>
 
     <!-- ======= Основной интерфейс ======= -->
     <section id="main" class="screen" hidden>
-      <div class="stack">
-        <!-- Страница с вкладками -->
+      <div class="db-banner" id="dbBanner" hidden>База Firestore не создана: сообщения и посты не сохраняются. Создайте её в консоли Firebase.</div>
+      <div class="stack" id="stack">
+
+        <!-- Вкладки -->
         <div class="page" id="tabsPage">
-          <div class="dim"></div>
-
-          <!-- Чаты -->
-          <div class="tab active" id="tab-chats">
-            <header class="navbar">
-              <div class="navbar-glass glass-bar"></div>
-              <button class="nav-btn" id="editBtn" aria-label="Изменить">Изм.</button>
-              <div class="nav-title">Чаты</div>
-              <button class="nav-icon glass round" id="composeBtn" aria-label="Новый чат">
-                <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg>
-              </button>
+          <!-- Лента -->
+          <div class="tab active" id="tab-feed">
+            <header class="bar feed-bar">
+              <span class="bar-side"></span>
+              <nav class="seg-text" id="feedSeg">
+                <button data-feed="following">Подписки</button>
+                <button data-feed="all" class="active">Для вас</button>
+                <button data-feed="fav">Избранное</button>
+              </nav>
+              <button class="icon-btn bar-side right" id="openChats" aria-label="Сообщения"><svg><use href="#i-send"/></svg><i class="badge" id="dmBadge" hidden></i></button>
             </header>
-            <div class="scroller" data-large-title>
-              <h1 class="large-title">Чаты</h1>
-              <div class="search glass-inset">
-                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-                <input id="chatSearch" type="search" placeholder="Поиск" />
-              </div>
-              <ul class="list" id="chatList"></ul>
-              <div class="empty" id="chatsEmpty" hidden>
-                <div class="empty-orb glass"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg></div>
-                <h3>Пока тихо</h3>
-                <p>Начните первый разговор: нажмите на карандаш сверху.</p>
-                <button class="btn-primary small" id="emptyCompose"><span>Новый чат</span></button>
-              </div>
+            <div class="scroller" id="feedScroll">
+              <div id="feedList"></div>
+              <div class="empty" id="feedEmpty" hidden></div>
             </div>
           </div>
 
-          <!-- Контакты -->
-          <div class="tab" id="tab-people">
-            <header class="navbar">
-              <div class="navbar-glass glass-bar"></div>
-              <span></span>
-              <div class="nav-title">Люди</div>
-              <span></span>
-            </header>
-            <div class="scroller" data-large-title>
-              <h1 class="large-title">Люди</h1>
-              <div class="search glass-inset">
-                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-                <input id="peopleSearch" type="search" placeholder="Имя или @username" autocapitalize="none" />
-              </div>
-              <ul class="list" id="peopleList"></ul>
-              <div class="empty" id="peopleEmpty" hidden>
-                <h3>Никого не нашли</h3>
-                <p>Попросите друга зарегистрироваться на вашем сервере.</p>
-              </div>
+          <!-- Поиск -->
+          <div class="tab" id="tab-search">
+            <header class="bar"><h1 class="bar-title-left">Поиск</h1></header>
+            <div class="scroller">
+              <label class="search"><svg><use href="#i-search"/></svg><input id="peopleSearch" type="search" placeholder="Имя или @username" autocapitalize="none" /></label>
+              <ul class="people" id="peopleList"></ul>
+              <div class="empty" id="peopleEmpty" hidden><b>Никого не нашли</b><span>Позовите друзей в Xitter</span></div>
             </div>
           </div>
 
-          <!-- Настройки -->
-          <div class="tab" id="tab-settings">
-            <header class="navbar">
-              <div class="navbar-glass glass-bar"></div>
-              <span></span>
-              <div class="nav-title">Настройки</div>
-              <span></span>
-            </header>
-            <div class="scroller" data-large-title>
-              <h1 class="large-title">Настройки</h1>
-              <div class="glass card profile-card">
-                <div class="avatar xl" id="meAvatar"></div>
-                <div class="profile-text">
-                  <h2 id="meName"></h2>
-                  <p id="meUsername"></p>
-                </div>
-              </div>
-
-              <div class="group-title">Профиль</div>
-              <div class="glass card form-card">
-                <label class="row-field"><span>Имя</span><input id="setName" maxlength="64" /></label>
-                <label class="row-field"><span>О себе</span><input id="setBio" maxlength="140" placeholder="Пара слов" /></label>
-                <div class="row-field colors-row">
-                  <span>Цвет</span>
-                  <div class="swatches" id="swatches"></div>
-                </div>
-              </div>
-              <button class="btn-primary" id="saveProfile"><span>Сохранить</span></button>
-
-              <div class="group-title">Оформление</div>
-              <div class="glass card form-card">
-                <div class="row-field">
-                  <span>Тема</span>
-                  <div class="seg glass-inset mini" id="themeSeg">
-                    <div class="seg-thumb"></div>
-                    <button data-theme="auto">Авто</button>
-                    <button data-theme="light">Светлая</button>
-                    <button data-theme="dark">Тёмная</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="group-title">Облако</div>
-              <div class="glass card form-card">
-                <div class="row-field"><span>Firebase</span><b id="serverInfo" class="mono"></b></div>
-                <div class="row-field"><span>Связь</span><b id="connInfo">—</b></div>
-              </div>
-
-              <button class="btn-danger glass" id="logoutBtn">Выйти</button>
-              <p class="footer-note">Xitter 1.1 · Firebase</p>
+          <!-- Активность -->
+          <div class="tab" id="tab-activity">
+            <header class="bar"><h1 class="bar-title-left">Активность</h1></header>
+            <div class="chips" id="actChips">
+              <button data-cat="all" class="active">Все</button>
+              <button data-cat="follow">Подписки</button>
+              <button data-cat="like">Лайки</button>
+              <button data-cat="comment">Комментарии</button>
+            </div>
+            <div class="scroller with-chips">
+              <ul class="activity" id="activityList"></ul>
+              <div class="empty" id="activityEmpty" hidden><b>Пока тихо</b><span>Здесь появятся подписки, лайки и комментарии</span></div>
             </div>
           </div>
 
-          <!-- Таб-бар -->
-          <nav class="tabbar glass liquid" id="tabbar">
-            <div class="tab-thumb"></div>
-            <button data-tab="chats" class="active">
-              <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
-              <span>Чаты</span><i class="badge" id="tabBadge" hidden></i>
-            </button>
-            <button data-tab="people">
-              <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.6.1 4.4 1.8 5 4.6"/></svg>
-              <span>Люди</span>
-            </button>
-            <button data-tab="settings">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>
-              <span>Настройки</span>
-            </button>
+          <!-- Профиль -->
+          <div class="tab" id="tab-me">
+            <header class="bar">
+              <span class="bar-side"></span>
+              <b class="bar-title" id="meHandle"></b>
+              <button class="icon-btn bar-side right" id="settingsBtn" aria-label="Настройки"><svg><use href="#i-gear"/></svg></button>
+            </header>
+            <div class="scroller" id="meProfile"></div>
+          </div>
+
+          <nav class="tabbar" id="tabbar">
+            <button data-tab="feed" class="active" aria-label="Лента"><svg><use href="#i-home"/></svg></button>
+            <button data-tab="search" aria-label="Поиск"><svg><use href="#i-search"/></svg></button>
+            <button data-tab="compose" aria-label="Новый пост"><svg><use href="#i-plus"/></svg></button>
+            <button data-tab="activity" aria-label="Активность"><svg><use href="#i-bell"/></svg><i class="badge" id="actBadge" hidden></i></button>
+            <button data-tab="me" aria-label="Профиль"><span class="tab-avatar" id="tabAvatar"></span></button>
           </nav>
         </div>
 
-        <!-- Экран переписки -->
-        <div class="page" id="chatPage" aria-hidden="true">
-          <div class="edge-shadow"></div>
-          <header class="chat-head">
-            <div class="navbar-glass glass-bar on"></div>
-            <button class="back" id="backBtn" aria-label="Назад">
-              <svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg>
-              <i class="badge" id="backBadge" hidden></i>
+        <!-- Список чатов -->
+        <div class="page pushed" id="chatsPage">
+          <header class="bar">
+            <button class="icon-btn bar-side" data-pop aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+            <b class="bar-title">Сообщения</b>
+            <button class="icon-btn bar-side right" id="composeChat" aria-label="Новый чат"><svg><use href="#i-edit"/></svg></button>
+          </header>
+          <div class="scroller">
+            <label class="search"><svg><use href="#i-search"/></svg><input id="chatSearch" type="search" placeholder="Поиск" /></label>
+            <ul class="chats" id="chatList"></ul>
+            <div class="empty" id="chatsEmpty" hidden><b>Нет сообщений</b><span>Напишите кому-нибудь первым</span><button class="btn-black small" id="emptyCompose">Новый чат</button></div>
+          </div>
+        </div>
+
+        <!-- Переписка -->
+        <div class="page pushed" id="chatPage">
+          <header class="bar chat-bar">
+            <button class="icon-btn" data-pop aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+            <button class="chat-who" id="chatWho">
+              <span class="avatar s" id="chatAvatar"></span>
+              <span class="who-text"><b id="chatTitle"></b><small id="chatStatus"></small></span>
             </button>
-            <div class="chat-title">
-              <div class="avatar" id="chatAvatar"></div>
-              <div class="ct-name"><b id="chatTitle"></b><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
-              <small id="chatStatus"></small>
-            </div>
-            <div class="head-right" id="callBtns">
-              <button class="hd-icon" id="audioCallBtn" aria-label="Аудиозвонок">
-                <svg viewBox="0 0 24 24"><path d="M5 4h3.5l1.8 4.5-2.3 1.4a11 11 0 0 0 6.1 6.1l1.4-2.3L20 15.5V19a1.5 1.5 0 0 1-1.6 1.5C10.6 20 4 13.4 3.5 5.6A1.5 1.5 0 0 1 5 4z"/></svg>
-              </button>
-              <button class="hd-icon" id="videoCallBtn" aria-label="Видеозвонок">
-                <svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="13" height="12" rx="3"/><path d="M15.5 10.5l6-3.5v10l-6-3.5z"/></svg>
-              </button>
-            </div>
+            <span class="chat-actions" id="callBtns">
+              <button class="icon-btn" id="audioCallBtn" aria-label="Аудиозвонок"><svg><use href="#i-phone"/></svg></button>
+              <button class="icon-btn" id="videoCallBtn" aria-label="Видеозвонок"><svg><use href="#i-video"/></svg></button>
+            </span>
           </header>
           <div class="messages" id="messages"></div>
+          <div class="emoji-pop" id="emojiPop" hidden></div>
           <form class="composer" id="composer">
-            <button class="plus" type="button" id="plusBtn" aria-label="Ещё"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
             <div class="composer-field">
-              <textarea id="msgInput" rows="1" placeholder="Сообщение" enterkeyhint="send"></textarea>
-              <button class="send" id="sendBtn" type="submit" aria-label="Отправить">
-                <svg viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>
-              </button>
+              <textarea id="msgInput" rows="1" placeholder="Сообщение..." enterkeyhint="send"></textarea>
+              <span class="composer-tools">
+                <button type="button" class="tool" id="micBtn" aria-label="Голосовое"><svg><use href="#i-mic"/></svg></button>
+                <button type="button" class="tool" id="emojiBtn" aria-label="Эмодзи"><svg><use href="#i-smile"/></svg></button>
+                <button type="button" class="tool" id="imgBtn" aria-label="Фото"><svg><use href="#i-image"/></svg></button>
+              </span>
+              <button class="send" id="sendBtn" type="submit" aria-label="Отправить"><svg><use href="#i-arrow-up"/></svg></button>
             </div>
+            <div class="recording" id="recording" hidden>
+              <i class="rec-dot"></i><span id="recTime">0:00</span><span class="rec-hint">Идёт запись</span>
+              <button type="button" class="rec-cancel" id="recCancel">Отмена</button>
+              <button type="button" class="send on" id="recSend" aria-label="Отправить голосовое"><svg><use href="#i-arrow-up"/></svg></button>
+            </div>
+            <input type="file" id="imgFile" accept="image/*" hidden />
+          </form>
+        </div>
+
+        <!-- Профиль другого человека -->
+        <div class="page pushed" id="userPage">
+          <header class="bar">
+            <button class="icon-btn bar-side" data-pop aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+            <b class="bar-title" id="userHandle"></b>
+            <span class="bar-side"></span>
+          </header>
+          <div class="scroller" id="userProfile"></div>
+        </div>
+
+        <!-- Пост с комментариями -->
+        <div class="page pushed" id="postPage">
+          <header class="bar">
+            <button class="icon-btn bar-side" data-pop aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+            <b class="bar-title">Пост</b>
+            <span class="bar-side"></span>
+          </header>
+          <div class="scroller post-scroller" id="postView"></div>
+          <form class="comment-form" id="commentForm">
+            <span class="avatar xs" id="commentAvatar"></span>
+            <input id="commentInput" placeholder="Добавить комментарий..." maxlength="1000" autocomplete="off" />
+            <button type="submit" class="link-btn strong">Отпр.</button>
           </form>
         </div>
       </div>
     </section>
 
-    <!-- Шторка «Новый чат» -->
+    <!-- ======= Шторки ======= -->
     <div class="sheet-backdrop" id="sheetBackdrop"></div>
-    <div class="sheet glass" id="sheet" aria-hidden="true">
-      <div class="sheet-grabber"></div>
+
+    <div class="sheet" id="composeSheet">
+      <div class="grabber"></div>
       <header class="sheet-head">
-        <button class="nav-btn" id="sheetCancel">Отмена</button>
-        <b id="sheetTitle">Новый чат</b>
-        <button class="nav-btn strong" id="sheetDone" hidden>Создать</button>
+        <button class="link-btn" data-close>Отмена</button>
+        <b>Новый пост</b>
+        <button class="btn-black small" id="publishBtn">Опубликовать</button>
       </header>
       <div class="sheet-body">
-        <div class="search glass-inset">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-          <input id="sheetSearch" type="search" placeholder="Кому: имя или @username" autocapitalize="none" />
+        <div class="compose-row">
+          <span class="avatar s" id="composeAvatar"></span>
+          <textarea id="postText" rows="4" maxlength="2000" placeholder="Что нового?"></textarea>
         </div>
-        <button class="row-action" id="newGroupBtn">
-          <span class="ra-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M19 8v6M16 11h6"/></svg></span>
-          Новая группа
-        </button>
-        <label class="field" id="groupNameField" hidden>
-          <span>Название группы</span>
-          <input id="groupName" maxlength="64" placeholder="Например, Пантера" />
-        </label>
-        <ul class="list" id="sheetList"></ul>
+        <div class="compose-image" id="composeImage" hidden><img alt="" /><button class="remove" id="removeImage" aria-label="Убрать фото"><svg><use href="#i-close"/></svg></button></div>
+        <button class="btn-soft left" id="addPhotoBtn"><svg><use href="#i-image"/></svg>Добавить фото</button>
+        <input type="file" id="postFile" accept="image/*" hidden />
       </div>
+    </div>
+
+    <div class="sheet" id="peopleSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <button class="link-btn" data-close>Отмена</button>
+        <b id="peopleSheetTitle">Новый чат</b>
+        <button class="link-btn strong" id="groupDone" hidden>Создать</button>
+      </header>
+      <div class="sheet-body">
+        <label class="search"><svg><use href="#i-search"/></svg><input id="sheetSearch" type="search" placeholder="Кому: имя или @username" autocapitalize="none" /></label>
+        <button class="row-action" id="newGroupBtn">Новая группа</button>
+        <input class="input" id="groupName" maxlength="64" placeholder="Название группы" hidden />
+        <ul class="people" id="sheetList"></ul>
+      </div>
+    </div>
+
+    <div class="sheet" id="editSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <button class="link-btn" data-close>Отмена</button>
+        <b>Профиль</b>
+        <button class="link-btn strong" id="saveProfile">Готово</button>
+      </header>
+      <div class="sheet-body">
+        <div class="edit-avatar"><span class="avatar xl" id="editAvatar"></span></div>
+        <div class="swatches" id="swatches"></div>
+        <label class="field"><span>Имя</span><input class="input" id="setName" maxlength="64" /></label>
+        <label class="field"><span>О себе</span><input class="input" id="setBio" maxlength="140" placeholder="Пара слов о себе" /></label>
+      </div>
+    </div>
+
+    <div class="sheet short" id="settingsSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head">
+        <span></span>
+        <b>Настройки</b>
+        <button class="link-btn strong" data-close>Готово</button>
+      </header>
+      <div class="sheet-body">
+        <div class="group">
+          <div class="group-row"><span>Тема</span>
+            <div class="seg" id="themeSeg"><button data-theme="auto">Авто</button><button data-theme="light">Светлая</button><button data-theme="dark">Тёмная</button></div>
+          </div>
+          <div class="group-row"><span>Firebase</span><b class="mono" id="serverInfo"></b></div>
+          <div class="group-row"><span>Связь</span><b id="connInfo">—</b></div>
+        </div>
+        <button class="btn-soft danger" id="logoutBtn">Выйти</button>
+        <p class="fine center">Xitter 2.0</p>
+      </div>
+    </div>
+
+    <div class="action-sheet" id="actionSheet" hidden>
+      <div class="as-group" id="asButtons"></div>
+      <button class="as-cancel" id="asCancel">Отмена</button>
     </div>
 
     <!-- Звонок (как в iOS) -->
@@ -307,7 +355,9 @@
       </div>
     </div>
 
-    <div class="toast glass" id="toast"></div>
+
+    <div class="toast" id="toast"></div>
+    <div class="viewer" id="viewer" hidden><img alt="" /></div>
   </div>
 
   <script src="vendor/firebase.js"></script>

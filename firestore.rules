@@ -14,6 +14,37 @@ service cloud.firestore {
       allow create, update: if signedIn() && uid() == userId;
     }
 
+    // Занятые имена пользователей (уникальность @username)
+    match /usernames/{name} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == uid();
+    }
+
+    // Лента: читать могут все вошедшие; лайки и счётчик комментариев меняет любой,
+    // остальное — только автор
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.author == uid()
+        && request.resource.data.text is string && request.resource.data.text.size() <= 2000
+        && (!('image' in request.resource.data) || request.resource.data.image.size() <= 950000);
+      allow update: if signedIn() && (resource.data.author == uid()
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'commentCount']));
+      allow delete: if signedIn() && resource.data.author == uid();
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.author == uid()
+          && request.resource.data.text is string && request.resource.data.text.size() <= 1000;
+        allow delete: if signedIn() && resource.data.author == uid();
+      }
+    }
+
+    // Уведомления: создаёт тот, кто действует; читает и отмечает прочитанными получатель
+    match /activity/{id} {
+      allow create: if signedIn() && request.resource.data.from == uid() && request.resource.data.to != uid();
+      allow read, update: if signedIn() && resource.data.to == uid();
+    }
+
     // Чаты видят и меняют только участники; состав участников менять нельзя
     match /chats/{chatId} {
       allow get: if signedIn() && (resource == null || uid() in resource.data.members);
@@ -28,7 +59,9 @@ service cloud.firestore {
         allow create: if signedIn() && isMember(chatId)
           && request.resource.data.from == uid()
           && request.resource.data.text is string
-          && request.resource.data.text.size() <= 4000;
+          && request.resource.data.text.size() <= 4000
+          && (!('image' in request.resource.data) || request.resource.data.image.size() <= 950000)
+          && (!('audio' in request.resource.data) || request.resource.data.audio.size() <= 950000);
       }
     }
 
