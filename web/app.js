@@ -346,6 +346,15 @@
     showAuth();
   }
 
+  // TURN-сервер для звонков из настроек приложения (config/calls)
+  let callConfig = null;
+  async function loadCallConfig() {
+    try {
+      callConfig = await B.getConfig('calls');
+      if (callConfig && callConfig.turn && callConfig.turn.length && !store.get('turn')) Call.setTurn(callConfig.turn);
+    } catch (e) { console.warn(e); }
+  }
+
   // ---------- основной экран ----------
   let firstChats = true;
   function enterMain() {
@@ -358,6 +367,7 @@
     main.animate([{ opacity: 0, transform: 'scale(1.04)' }, { opacity: 1, transform: 'none' }], { duration: 600, easing: 'cubic-bezier(0.22,1,0.36,1)' });
     switchTab('feed', true);
     renderMe();
+    loadCallConfig();
     B.start({
       onChats: (chats) => { onChats(chats, firstChats); firstChats = false; },
       onMe: (u) => { S.me = u; renderMe(); schedule(); },
@@ -816,7 +826,7 @@
     if (a.type === 'follow') return `${name} подписался(-ась) на вас${t}`;
     if (a.type === 'like') return `${name} оценил(а) ваш пост${t}`;
     if (a.type === 'comment') return `${name} прокомментировал(а): ${esc(a.text || '')}${t}`;
-    if (a.type === 'gift') return `${name} подарил(а) вам ${esc((GIFT_INFO[a.gift] || ['🎁', 'подарок'])[0])} ${esc((GIFT_INFO[a.gift] || ['', 'подарок'])[1].toLowerCase())}${t}`;
+    if (a.type === 'gift') return `${name} подарил(а) вам ${esc((GIFT_INFO[a.gift] || ['🎁', 'подарок'])[0])} ${esc((GIFT_INFO[a.gift] || ['', 'подарок'])[1].toLowerCase())}${(a.count || 1) > 1 ? ' ×' + a.count : ''}${t}`;
     if (a.type === 'nft') return `${name} подарил(а) вам NFT${t}`;
     return name + t;
   }
@@ -871,41 +881,69 @@
   });
 
   // ---------- профили ----------
+  // узор из подарков вокруг аватарки (как в Telegram)
+  const PATTERN = [[8, 18, 22, 0.5], [22, 52, 16, 0.35], [10, 80, 18, 0.3], [28, 12, 14, 0.3], [30, 84, 20, 0.45], [70, 12, 14, 0.3],
+    [92, 18, 22, 0.5], [78, 52, 16, 0.35], [90, 80, 18, 0.3], [70, 84, 20, 0.45], [50, 6, 12, 0.25], [16, 36, 12, 0.25], [84, 36, 12, 0.25]];
+  function giftPatternHTML(uid) {
+    const g = giftCache.get(uid);
+    if (!g || (!g.nfts.length && !g.gifts.length)) return { html: '', css: '' };
+    const n = g.nfts[0];
+    let item, css = '';
+    if (n) {
+      const col = B.collection(n.cid) || {};
+      const bd = BACKDROPS[n.backdrop] || BACKDROPS.sapphire;
+      css = `--b1:${bd[1]};--b2:${bd[2]}`;
+      item = col.image && col.image.id ? `<i data-media="${esc(col.image.id)}"></i>` : esc(col.emoji || '🎁');
+    } else item = esc((GIFT_INFO[g.gifts[0].type] || ['🎁'])[0]);
+    const html = `<div class="gift-pattern">${PATTERN.map(([x, y, sz, o]) => `<span style="left:${x}%;top:${y}%;font-size:${sz}px;opacity:${o}">${item}</span>`).join('')}</div>`;
+    return { html, css, nft: !!n };
+  }
+  const PTAB = { me: 'posts', user: 'posts' };
   function profileHTML(u, isMe, followers) {
     const posts = S.posts.filter((p) => p.author === u.id);
     const f = following();
-    const btns = isMe
-      ? `<button class="btn-soft" id="editProfileBtn">Редактировать профиль</button><button class="btn-soft" data-chats>Сообщения</button>`
-      : `<button class="btn-out ${f.has(u.id) ? 'on' : ''}" data-follow="${esc(u.id)}">${f.has(u.id) ? 'Вы подписаны' : 'Подписаться'}</button><button class="btn-soft" data-message="${esc(u.id)}">Сообщение</button><button class="btn-soft gift-btn" data-giftto="${esc(u.id)}" aria-label="Подарить"><svg><use href="#i-gift"/></svg></button>`;
+    const tile = (attrs, icon, label, cls = '') => `<button class="tg-act ${cls}" ${attrs}>${icon}<span>${label}</span></button>`;
+    const svg = (n) => `<svg><use href="#i-${n}"/></svg>`;
+    const acts = isMe
+      ? tile('id="editProfileBtn"', svg('edit'), 'Изменить') + tile('data-chats', svg('send'), 'Сообщения')
+        + tile('data-wallet', '<b class="moon">☾</b>', `${num(u.lune || 0)} LUNE`) + tile('data-market', svg('gift'), 'Маркет')
+      : tile(`data-message="${esc(u.id)}"`, svg('comment'), 'Сообщение')
+        + tile(`data-follow="${esc(u.id)}"`, svg(f.has(u.id) ? 'heart' : 'plus'), f.has(u.id) ? 'Подписаны' : 'Подписаться', f.has(u.id) ? 'on' : '')
+        + tile(`data-callto="${esc(u.id)}"`, svg('phone'), 'Звонок') + tile(`data-giftto="${esc(u.id)}"`, svg('gift'), 'Подарок');
     const s = styleOf(u);
     const banner = s.banner && s.banner.id
       ? `<div class="banner fx-${esc(EFFECTS[s.effect] ? s.effect || 'none' : 'none')}" data-media="${esc(s.banner.id)}"><i class="fx"></i></div>` : '';
-    const extra = (u.usernames || []).map((n) => ' · @' + esc(n)).join('');
-    const badges = [
-      u.plus ? '<span class="plus-badge">Plus</span>' : '',
-      isMe ? `<button class="lune-chip" data-wallet>☾ ${num(u.lune || 0)} LUNE</button>` : '',
-    ].join('');
+    const pat = giftPatternHTML(u.id);
     const music = u.music && u.music.id
       ? `<button class="music-card ${profileMusic.id === u.music.id && profileMusic.playing ? 'playing' : ''}" data-music="${esc(u.music.id)}"><span class="mplay"><svg><use href="#i-${profileMusic.id === u.music.id && profileMusic.playing ? 'pause' : 'play'}"/></svg></span><span class="mtext"><b>${esc(u.music.title || 'Трек')}</b><small>Музыка профиля</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>` : '';
-    return `${banner}<div class="profile ${banner ? 'has-banner' : ''}">
-      <div class="profile-top">
+    const g = giftCache.get(u.id) || { gifts: [], nfts: [] };
+    const giftCount = g.nfts.length + g.gifts.reduce((t, x) => t + (x.count || 1), 0);
+    const giftIcons = [...g.nfts.slice(0, 3).map((n) => esc((B.collection(n.cid) || {}).emoji || '💎')), ...g.gifts.slice(0, 3).map((x) => (GIFT_INFO[x.type] || ['🎁'])[0])].slice(0, 3).join('');
+    const extra = u.usernames || [];
+    const tab = PTAB[isMe ? 'me' : 'user'];
+    return `<div class="profile tg">
+      <div class="tg-head ${banner ? 'has-banner' : ''} ${pat.nft ? 'tinted' : ''}" style="${pat.css}">
+        ${banner}${pat.html}
         ${avatarHTML(u, 'xl', !isMe && u.online)}
-        <div class="stats">
-          <div><b>${num(posts.length)}</b><span>${plural(posts.length, 'пост', 'поста', 'постов')}</span></div>
-          <div><b>${followers == null ? '—' : num(followers)}</b><span>${plural(followers || 0, 'подписчик', 'подписчика', 'подписчиков')}</span></div>
-          <div><b>${num((u.following || []).length)}</b><span>${plural((u.following || []).length, 'подписка', 'подписки', 'подписок')}</span></div>
-        </div>
+        <h2>${nameHTML(u)}</h2>
+        <div class="tg-seen">${isMe ? 'в сети' : esc(fmtSeen(u))}${u.plus ? ' <span class="plus-badge">Plus</span>' : ''}</div>
       </div>
-      <h2>${nameHTML(u)}</h2>
-      <div class="handle">@${esc(u.username)}${extra}${isMe ? '' : ' · ' + esc(fmtSeen(u))}</div>
-      ${badges ? `<div class="badges">${badges}</div>` : ''}
-      ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
+      <div class="tg-acts">${acts}</div>
       ${music}
-      ${giftsStripHTML(u.id, isMe)}
-      <div class="profile-btns">${btns}</div>
+      <div class="tg-card">
+        <div class="tg-row"><div><b class="link">@${esc(u.username)}</b>${extra.length ? `<small>также ${extra.map((n) => '<b class="link">@' + esc(n) + '</b>').join(', ')}</small>` : ''}<small>имя пользователя</small></div></div>
+        ${u.bio ? `<div class="tg-row"><div><p class="bio">${esc(u.bio)}</p><small>о себе</small></div></div>` : ''}
+      </div>
+      <div class="tg-card">
+        <button class="tg-row" data-ptab="posts">${svg('image')}<span>${num(posts.length)} ${plural(posts.length, 'пост', 'поста', 'постов')}</span></button>
+        <button class="tg-row" data-ptab="gifts">${svg('gift')}<span>${num(giftCount)} ${plural(giftCount, 'подарок', 'подарка', 'подарков')} <i class="gicons">${giftIcons}</i></span></button>
+        <div class="tg-row">${svg('heart')}<span>${followers == null ? '—' : num(followers)} ${plural(followers || 0, 'подписчик', 'подписчика', 'подписчиков')} · ${num((u.following || []).length)} ${plural((u.following || []).length, 'подписка', 'подписки', 'подписок')}</span></div>
+      </div>
     </div>
-    <div class="profile-posts"></div>
-    ${posts.length ? '' : `<div class="empty"><b>Постов пока нет</b>${isMe ? '<button class="btn-black small" data-go="compose">Новый пост</button>' : ''}</div>`}`;
+    <nav class="seg-text profile-tabs"><button data-ptab="posts" class="${tab === 'posts' ? 'active' : ''}">Посты</button><button data-ptab="gifts" class="${tab === 'gifts' ? 'active' : ''}">Подарки</button></nav>
+    <div class="profile-posts" ${tab === 'posts' ? '' : 'hidden'}></div>
+    ${tab === 'posts' && !posts.length ? `<div class="empty"><b>Постов пока нет</b>${isMe ? '<button class="btn-black small" data-go="compose">Новый пост</button>' : ''}</div>` : ''}
+    ${tab === 'gifts' ? giftsGridHTML(u.id, isMe) : ''}`;
   }
   // разметку профиля обновляем, а список постов внутри — через кэш узлов
   function renderProfileInto(box, u, isMe, followers) {
@@ -936,6 +974,7 @@
     if (!uid) return;
     if (uid === S.me.id) { resetStack(); switchTab('me'); return; }
     S.viewUser = { id: uid, followers: null };
+    PTAB.user = 'posts';
     loadGifts(uid);
     const box = $('#userProfile');
     box.replaceChildren();
@@ -958,6 +997,16 @@
       if (e.target.closest('[data-wallet]')) { openWallet(); return; }
       const gt = e.target.closest('[data-giftto]');
       if (gt) { openGiftSheet(gt.dataset.giftto); return; }
+      const ct = e.target.closest('[data-callto]');
+      if (ct) { messageUser(ct.dataset.callto).then(() => Call.start(false)); return; }
+      const pt = e.target.closest('[data-ptab]');
+      if (pt) {
+        const isMe = box.id === 'meProfile';
+        PTAB[isMe ? 'me' : 'user'] = pt.dataset.ptab;
+        if (isMe) renderMeProfile(); else renderUserProfile();
+        if (pt.classList.contains('tg-row')) box.querySelector('.profile-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
       if (e.target.closest('[data-market]')) { openMarket(); return; }
       const nf = e.target.closest('[data-nft]');
       if (nf) { openNft(nf.dataset.nft); return; }
@@ -1295,32 +1344,43 @@
     const col = n.cid ? B.collection(n.cid) || n : n;
     const bd = BACKDROPS[n.backdrop || (col.backdrops || [])[0]] || BACKDROPS.sapphire;
     const img = col.image && col.image.id ? ` data-media="${esc(col.image.id)}"` : '';
-    return `<span class="nft-art ${big ? 'big' : ''}" style="--b1:${bd[1]};--b2:${bd[2]}"><span class="nft-img"${img}>${img ? '' : esc(col.emoji || '🎁')}</span></span>`;
+    return `<span class="nft-art ${big ? 'big' : ''} ${img && col.fullBleed ? 'full' : ''}" style="--b1:${bd[1]};--b2:${bd[2]}"><span class="nft-img"${img}>${img ? '' : esc(col.emoji || '🎁')}</span></span>`;
   }
   const nftName = (n) => { const c = B.collection(n.cid); return `${c ? c.name : 'NFT'} #${n.num}`; };
-  function giftsStripHTML(uid, isMe) {
+  function giftsGridHTML(uid, isMe) {
     const g = giftCache.get(uid);
-    if (!g) return '';
-    const total = g.gifts.length + g.nfts.length;
-    if (!total && !isMe) return '';
+    if (!g) return '<div class="empty"><b>Загружаю подарки…</b></div>';
     const tiles = [
       ...g.nfts.map((n) => `<button class="gift-tile nft" data-nft="${esc(n.id)}">${nftArtHTML(n)}<small>#${n.num}</small></button>`),
-      ...g.gifts.map((x) => `<button class="gift-tile" data-giftinfo="${esc(x.id)}"><span class="gift-art">${(GIFT_INFO[x.type] || ['🎁'])[0]}</span><small>${avatarHTML(user(x.from), 'xxs')}</small></button>`),
+      ...g.gifts.map((x) => `<button class="gift-tile" data-giftinfo="${esc(x.id)}"><span class="gift-art">${(GIFT_INFO[x.type] || ['🎁'])[0]}</span>${(x.count || 1) > 1 ? `<em class="gcount">×${x.count}</em>` : ''}<small>${avatarHTML(user(x.from), 'xxs')}</small></button>`),
     ].join('');
-    return `<div class="profile-gifts"><div class="pg-head"><b>Подарки${total ? ' · ' + total : ''}</b>${isMe ? '<button class="link-btn" data-market>Маркет ›</button>' : ''}</div>
-      ${total ? `<div class="pg-strip">${tiles}</div>` : '<p class="fine">Пока нет подарков</p>'}</div>`;
+    return `<div class="profile-gifts">${tiles ? `<div class="gift-grid">${tiles}</div>` : `<div class="empty"><b>Пока нет подарков</b>${isMe ? '<button class="btn-black small" data-market>Открыть маркет</button>' : ''}</div>`}</div>`;
   }
+  // карточка обычного подарка (в той же шторке, что и NFT)
   function giftInfo(id) {
-    for (const g of giftCache.values()) {
-      const x = g.gifts.find((y) => y.id === id);
-      if (x) { const i = GIFT_INFO[x.type] || ['🎁', 'Подарок']; toast(`${i[0]} ${i[1]} от ${user(x.from).name}${x.text ? ': «' + x.text + '»' : ''}`); return; }
-    }
+    let x = null, owner = null;
+    for (const [uid, g] of giftCache) { const y = g.gifts.find((z) => z.id === id); if (y) { x = y; owner = uid; break; } }
+    if (!x) return;
+    nftOpen = null;
+    const i = GIFT_INFO[x.type] || ['🎁', 'Подарок'];
+    const cnt = x.count || 1;
+    const mine = owner === S.me.id;
+    $('#nftSheetTitle').textContent = i[1];
+    $('#nftSheetBody').innerHTML = `
+      <div class="nft-hero"><span class="gift-art hero">${i[0]}</span><h3>${esc(i[1])}${cnt > 1 ? ' ×' + cnt : ''}</h3>${x.text ? `<p class="fine center">«${esc(x.text)}»</p>` : ''}</div>
+      <div class="group">
+        <div class="group-row"><span>От кого</span><b>${esc(user(x.from).name)}</b></div>
+        <div class="group-row"><span>Дата</span><b>${esc(fmtDay(x.createdAt))}</b></div>
+        <div class="group-row"><span>Стоимость</span><b>☾ ${num(x.price)}</b></div>
+      </div>
+      ${mine ? `<button class="btn-black" data-sellgift="${esc(x.id)}">Продать за ☾ ${num(B.giftSellValue(x.price))}</button><p class="fine center">Подарок исчезнет из профиля, а вы получите 85% его стоимости.</p>` : ''}`;
+    openSheet('nftSheet');
   }
-
   // шторка «Подарить»
-  const GS = { to: null, tab: 'gifts', sel: null };
+  const GS = { to: null, tab: 'gifts', sel: null, count: 1 };
   async function openGiftSheet(uid) {
-    GS.to = uid; GS.tab = 'gifts'; GS.sel = null;
+    GS.to = uid; GS.tab = 'gifts'; GS.sel = null; GS.count = 1;
+    $('#giftQty').value = 1;
     $('#giftText').value = '';
     $('#giftTitle').textContent = 'Подарок для ' + user(uid).name;
     $$('#giftSeg button').forEach((b) => b.classList.toggle('active', b.dataset.g === 'gifts'));
@@ -1340,9 +1400,11 @@
         : '<div class="empty"><b>У вас нет NFT</b><span>Их можно купить в маркете</span></div>';
     }
     $('#giftText').hidden = GS.tab !== 'gifts';
+    $('#giftCount').hidden = GS.tab !== 'gifts';
     const btn = $('#giftSendBtn');
     btn.disabled = !GS.sel;
-    btn.textContent = !GS.sel ? 'Выберите подарок' : GS.tab === 'gifts' ? `Отправить за ☾ ${B.GIFTS[GS.sel]}` : 'Подарить NFT';
+    btn.textContent = !GS.sel ? 'Выберите подарок' : GS.tab === 'gifts'
+      ? `Отправить${GS.count > 1 ? ' ' + GS.count + ' шт.' : ''} за ☾ ${num(B.GIFTS[GS.sel] * GS.count)}` : 'Подарить NFT';
   }
   $$('#giftSeg button').forEach((b) => b.addEventListener('click', () => {
     GS.tab = b.dataset.g; GS.sel = null;
@@ -1356,17 +1418,28 @@
     renderGiftSheet();
     haptic(6);
   });
+  const setGiftCount = (n) => {
+    GS.count = Math.max(1, Math.min(999, Math.round(+n || 1)));
+    if (document.activeElement !== $('#giftQty') || +$('#giftQty').value !== GS.count) $('#giftQty').value = GS.count;
+    renderGiftSheet();
+  };
+  $('#giftQty').addEventListener('input', () => { if ($('#giftQty').value !== '') setGiftCount($('#giftQty').value); });
+  $('#giftQty').addEventListener('blur', () => setGiftCount($('#giftQty').value));
+  $('#giftCount').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cnt]');
+    if (b) { setGiftCount(GS.count + +b.dataset.cnt); haptic(5); }
+  });
   $('#giftSendBtn').addEventListener('click', async (e) => {
     if (!GS.sel || !GS.to || !canPost()) return;
     const to = GS.to;
     try {
       if (GS.tab === 'gifts') {
-        const type = GS.sel, note = $('#giftText').value.trim();
-        if ((S.me.lune || 0) < B.GIFTS[type]) { toast(`Нужно ${B.GIFTS[type]} LUNE`); return; }
-        await busy(e.currentTarget, () => B.sendGift(to, type, note));
+        const type = GS.sel, note = $('#giftText').value.trim(), count = GS.count, total = B.GIFTS[type] * count;
+        if ((S.me.lune || 0) < total) { toast(`Нужно ${total} LUNE`); return; }
+        await busy(e.currentTarget, () => B.sendGift(to, type, note, count));
         const chat = await B.openDM(to);
         S.chats.set(chat.id, S.chats.get(chat.id) || chat);
-        B.send(chat.id, `${GIFT_INFO[type][0]} Подарок: ${GIFT_INFO[type][1]}`, { kind: 'gift', gift: type, price: B.GIFTS[type], note });
+        B.send(chat.id, `${GIFT_INFO[type][0]} Подарок: ${GIFT_INFO[type][1]}${count > 1 ? ' ×' + count : ''}`, { kind: 'gift', gift: type, count, price: total, note });
       } else {
         const n = giftCache.get(S.me.id).nfts.find((x) => x.id === GS.sel);
         await busy(e.currentTarget, () => B.transferNFT(n.id, to));
@@ -1491,6 +1564,17 @@
       : n.salePrice > 0 ? `<button class="btn-black" data-buynft>Купить за ☾ ${num(n.salePrice)}</button>` : ''}`;
   }
   $('#nftSheetBody').addEventListener('click', async (e) => {
+    const sg = e.target.closest('[data-sellgift]');
+    if (sg) {
+      try {
+        const v = await busy(sg, () => B.sellGift(sg.dataset.sellgift));
+        closeSheet();
+        toast(`Продано: +${v} LUNE`);
+        haptic([10, 40, 10]);
+        loadGifts(S.me.id);
+      } catch (err) { toast(err.message); }
+      return;
+    }
     const n = nftOpen;
     if (!n) return;
     const b = e.target.closest('button');
@@ -1530,7 +1614,9 @@
   const NC = { backdrops: new Set(['sapphire', 'amethyst', 'gold']), image: null };
   function renderNftCreator() {
     $('#nftBackdrops').innerHTML = Object.entries(BACKDROPS).map(([k, [name, a, b]]) => `<button type="button" data-bd="${k}" class="bd-chip ${NC.backdrops.has(k) ? 'active' : ''}" style="--b1:${a};--b2:${b}"><i></i>${name}</button>`).join('');
-    const preview = { emoji: $('#nftEmoji').value.trim() || '🎁', image: NC.image, backdrops: [...NC.backdrops] };
+    $('#nftFull').disabled = !NC.image;
+    if (!NC.image) $('#nftFull').checked = false;
+    const preview = { emoji: $('#nftEmoji').value.trim() || '🎁', image: NC.image, fullBleed: $('#nftFull').checked, backdrops: [...NC.backdrops] };
     $('#nftPreview').innerHTML = (preview.backdrops.length ? preview.backdrops : ['sapphire']).slice(0, 4).map((bd) => nftArtHTML({ ...preview, backdrop: bd })).join('');
     $('#nftImageBtn').textContent = NC.image ? 'Картинка загружена · убрать' : 'Загрузить картинку';
     renderAdminCollections();
@@ -1550,6 +1636,7 @@
     renderNftCreator();
   });
   $('#nftEmoji').addEventListener('input', () => renderNftCreator());
+  $('#nftFull').addEventListener('change', () => renderNftCreator());
   $('#nftImageBtn').addEventListener('click', async (e) => {
     if (NC.image) { NC.image = null; renderNftCreator(); return; }
     const f = await anyFile('image/*');
@@ -1560,7 +1647,7 @@
   $('#nftCreateBtn').addEventListener('click', async (e) => {
     try {
       await busy(e.currentTarget, () => B.createCollection({
-        name: $('#nftName').value, emoji: firstGrapheme($('#nftEmoji').value.trim()), image: NC.image, description: $('#nftDesc').value,
+        name: $('#nftName').value, emoji: firstGrapheme($('#nftEmoji').value.trim()), image: NC.image, fullBleed: $('#nftFull').checked, description: $('#nftDesc').value,
         price: $('#nftPrice').value, supply: $('#nftSupply').value, backdrops: [...NC.backdrops],
       }));
       toast('Коллекция выпущена 🎉');
@@ -1665,6 +1752,10 @@
       ['Забанены', us.filter((u) => u.banned).length], ['Ограничены', us.filter((u) => u.restricted).length],
       ['LUNE у всех', us.reduce((n, u) => n + (u.lune || 0), 0)], ['В сети', us.filter((u) => u.online).length],
     ];
+    const t = (callConfig && callConfig.turn && callConfig.turn[0]) || {};
+    if (!$('#turnUrls').matches(':focus')) $('#turnUrls').value = [].concat(t.urls || []).join(', ');
+    if (!$('#turnUser').matches(':focus')) $('#turnUser').value = t.username || '';
+    if (!$('#turnPass').matches(':focus')) $('#turnPass').value = t.credential || '';
     $('#adminStats').innerHTML = cards.map(([t, v]) => `<div class="stat"><b>${num(v)}</b><span>${t}</span></div>`).join('');
     $('#adminOverview').hidden = ADMIN.tab !== 'overview';
     $('#adminUsersBox').hidden = ADMIN.tab !== 'users';
@@ -1685,6 +1776,17 @@
     renderAdmin();
   }));
   $('#adminSearch').addEventListener('input', () => renderAdmin());
+  $('#turnSave').addEventListener('click', async (e) => {
+    const urls = $('#turnUrls').value.split(/[\s,]+/).filter((u) => /^turns?:/.test(u));
+    if ($('#turnUrls').value.trim() && !urls.length) { toast('Адрес должен начинаться с turn: или turns:'); return; }
+    const data = { turn: urls.length ? [{ urls, username: $('#turnUser').value.trim(), credential: $('#turnPass').value.trim() }] : [] };
+    try {
+      await busy(e.currentTarget, () => B.setConfig('calls', data));
+      callConfig = data;
+      if (!store.get('turn')) Call.setTurn(data.turn);
+      toast(urls.length ? 'TURN-сервер сохранён' : 'Вернул бесплатный TURN-сервер');
+    } catch (err) { toast(err.message); }
+  });
   $('#adminList').addEventListener('click', (e) => {
     const r = e.target.closest('[data-auid]');
     if (!r) return;
@@ -2001,7 +2103,7 @@
   function bubbleHTML(m) {
     if (m.kind === 'sticker') return stickerHTML(m.sticker, m.text);
     if (m.kind === 'gift' && GIFT_INFO[m.gift]) {
-      return `<div class="gift-bubble"><span class="gift-art">${GIFT_INFO[m.gift][0]}</span><b>${esc(GIFT_INFO[m.gift][1])}</b><small>Подарок · ☾ ${num(m.price || B.GIFTS[m.gift] || 0)}</small>${m.note ? `<p>${esc(m.note)}</p>` : ''}</div>`;
+      return `<div class="gift-bubble"><span class="gift-art">${GIFT_INFO[m.gift][0]}</span><b>${esc(GIFT_INFO[m.gift][1])}${(m.count || 1) > 1 ? ' ×' + esc(m.count) : ''}</b><small>Подарок · ☾ ${num(m.price || B.GIFTS[m.gift] || 0)}</small>${m.note ? `<p>${esc(m.note)}</p>` : ''}</div>`;
     }
     if (m.kind === 'nftgift' && m.nft) {
       return `<div class="gift-bubble nft" data-nft="${esc(m.nft.id)}">${nftArtHTML(m.nft)}<b>${esc(m.nft.name || 'NFT')} #${esc(m.nft.num)}</b><small>NFT-подарок</small></div>`;
@@ -2328,15 +2430,19 @@
   const Call = (() => {
     const el = $('#call');
     const remoteV = $('#remoteVideo'), localV = $('#localVideo');
-    let turn = null;
-    try { turn = JSON.parse(store.get('turn') || 'null'); } catch {}
-    const ICE = {
-      iceServers: [
-        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-        // TURN-сервер нужен, если звонок не соединяется через мобильный интернет. Свой можно указать в localStorage['xitter.turn'] = JSON
-        ...(turn ? [turn] : []),
-      ],
-    };
+    // TURN-сервер пересылает звонок, когда телефоны в разных сетях (мобильный интернет, разные Wi-Fi)
+    // и не могут соединиться напрямую. Свой сервер админ задаёт в админке, иначе берётся бесплатный Open Relay.
+    const ICE = { iceServers: [] };
+    const DEFAULT_TURN = [{ urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }];
+    function setTurn(list) {
+      ICE.iceServers = [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+        ...(list && list.length ? list : DEFAULT_TURN),
+      ];
+    }
+    let localTurn = null;
+    try { localTurn = JSON.parse(store.get('turn') || 'null'); } catch {}
+    setTurn(localTurn ? [localTurn] : null);
     let c = null;
     let ringTimer = null, ringOsc = null, durTimer = null;
 
@@ -2644,7 +2750,7 @@
       });
     })();
 
-    return { start, onSignal, get active() { return !!c; } };
+    return { start, onSignal, setTurn, get active() { return !!c; } };
   })();
 
   $('#audioCallBtn').addEventListener('click', () => Call.start(false));

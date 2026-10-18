@@ -680,20 +680,40 @@
   const GIFTS = { heart: 15, bear: 15, gift: 25, rose: 25, cake: 50, bouquet: 50, rocket: 50, champagne: 50, trophy: 100, ring: 100, diamond: 100 };
   const myLune = (s) => (s.exists() ? s.data().lune || 0 : 0);
 
-  const sendGift = wrap(async (to, type, text) => {
-    const price = GIFTS[type];
+  const sendGift = wrap(async (to, type, text, count = 1) => {
+    count = Math.round(+count || 1);
+    if (count < 1 || count > 999) throw new Error('Количество от 1 до 999');
+    const price = GIFTS[type] * count;
     if (!price || !to || to === me) throw new Error('Нельзя отправить этот подарок');
     const gref = doc(collection(db, 'gifts'));
     await runTransaction(db, async (t) => {
       const sref = doc(db, 'status', me);
       const s = await t.get(sref);
       if (myLune(s) < price) throw new Error(`Нужно ${price} LUNE`);
-      t.set(gref, { from: me, to, type, price, text: String(text || '').trim().slice(0, 120), createdAt: Date.now() });
+      t.set(gref, { from: me, to, type, count, price, text: String(text || '').trim().slice(0, 120), createdAt: Date.now() });
       t.update(sref, { lune: myLune(s) - price, spend: { k: 'gift', id: gref.id } });
     });
-    addActivity(to, { type: 'gift', gift: type });
+    addActivity(to, { type: 'gift', gift: type, count });
     return gref.id;
   });
+
+  // продажа обычного подарка: 85% цены возвращается получателю
+  const giftSellValue = (price) => Math.trunc((price * 85) / 100);
+  const sellGift = wrap(async (id) => {
+    let value = 0;
+    await runTransaction(db, async (t) => {
+      const gref = doc(db, 'gifts', id), sref = doc(db, 'status', me);
+      const [g, s] = [await t.get(gref), await t.get(sref)];
+      if (!g.exists() || g.data().to !== me) throw new Error('Подарок не найден');
+      value = giftSellValue(g.data().price);
+      t.delete(gref);
+      t.set(sref, { lune: myLune(s) + value, sold: id }, { merge: true });
+    });
+    return value;
+  });
+  // настройки звонков (TURN)
+  const getConfig = wrap(async (key) => { const d = await getDoc(doc(db, 'config', key)); return d.exists() ? d.data() : null; });
+  const setConfig = wrap(async (key, data) => { await setDoc(doc(db, 'config', key), data); });
 
   // подарки и NFT пользователя
   const userGifts = wrap(async (uid) => {
@@ -722,7 +742,7 @@
     if (supply < 1 || supply > 1000000) throw new Error('Тираж от 1 до 1 000 000');
     if (!c.backdrops || !c.backdrops.length) throw new Error('Выберите хотя бы один фон');
     const ref = doc(collection(db, 'nftCollections'));
-    const data = { name, emoji: String(c.emoji || '').slice(0, 16), image: c.image || null, description: String(c.description || '').slice(0, 200), price, supply, minted: 0, backdrops: c.backdrops.slice(0, 12), active: true, createdBy: me, createdAt: Date.now() };
+    const data = { name, emoji: String(c.emoji || '').slice(0, 16), image: c.image || null, fullBleed: !!(c.fullBleed && c.image), description: String(c.description || '').slice(0, 200), price, supply, minted: 0, backdrops: c.backdrops.slice(0, 12), active: true, createdBy: me, createdAt: Date.now() };
     await setDoc(ref, data);
     collections.set(ref.id, { id: ref.id, ...data });
     return ref.id;
@@ -796,7 +816,7 @@
     createPost, deletePost, toggleLike, subscribeComments, addComment,
     openDM, createGroup, subscribeMessages, send, markRead, typing, signal,
     uploadFile, fileURL, buyUsername,
-    GIFTS, sendGift, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
+    GIFTS, sendGift, sellGift, giftSellValue, getConfig, setConfig, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
     mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
     USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT,
     get uid() { return me; },

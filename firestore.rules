@@ -39,7 +39,7 @@ service cloud.firestore {
 
     match /status/{userId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin() || buysUsername(userId) || spends(userId) || getsSalePayment(userId);
+      allow create, update: if isAdmin() || buysUsername(userId) || spends(userId) || getsSalePayment(userId) || sellsGift(userId);
     }
 
     // ---------- траты LUNE: подарок, выпуск NFT, покупка NFT с рук ----------
@@ -82,7 +82,20 @@ service cloud.firestore {
         && after.lune == before.get('lune', 0) + n.salePrice;
     }
 
-    // Обычные подарки: цена в LUNE фиксирована
+    // Продажа обычного подарка: получатель удаляет его и получает 85% цены
+    function sellsGift(userId) {
+      let before = resource == null ? {} : resource.data;
+      let after = request.resource.data;
+      let gpath = /databases/$(database)/documents/gifts/$(after.sold);
+      return signedIn() && uid() == userId && !isBanned()
+        && after.diff(before).affectedKeys().hasOnly(['lune', 'sold'])
+        && exists(gpath) && !existsAfter(gpath)
+        && get(gpath).data.to == uid()
+        && after.lune == before.get('lune', 0) + giftSellValue(get(gpath).data.price);
+    }
+    function giftSellValue(price) { return int(price * 85 / 100); }
+
+    // Обычные подарки: цена в LUNE фиксирована, можно подарить сразу несколько (count)
     function giftPrices() {
       return { 'heart': 15, 'bear': 15, 'gift': 25, 'rose': 25, 'cake': 50, 'bouquet': 50,
         'rocket': 50, 'champagne': 50, 'trophy': 100, 'ring': 100, 'diamond': 100 };
@@ -92,10 +105,14 @@ service cloud.firestore {
       allow create: if canWrite() && request.resource.data.from == uid()
         && request.resource.data.to is string && request.resource.data.to != uid()
         && request.resource.data.type in giftPrices()
-        && request.resource.data.price == giftPrices()[request.resource.data.type]
+        && request.resource.data.get('count', 1) is int
+        && request.resource.data.get('count', 1) >= 1 && request.resource.data.get('count', 1) <= 999
+        && request.resource.data.price == giftPrices()[request.resource.data.type] * request.resource.data.get('count', 1)
         && getAfter(statusPath(uid())).data.spend == { 'k': 'gift', 'id': id };
       allow update: if signedIn() && resource.data.to == uid()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden']);
+      allow delete: if signedIn() && resource.data.to == uid()
+        && getAfter(statusPath(uid())).data.get('sold', '') == id;
     }
 
     // NFT-подарки: коллекции создают админы, экземпляры выпускаются по одному за LUNE
@@ -152,6 +169,12 @@ service cloud.firestore {
         && name is string
         && !exists(/databases/$(database)/documents/usernames/$(name))
         && getAfter(/databases/$(database)/documents/usernames/$(name)).data.uid == uid();
+    }
+
+    // Настройки приложения (TURN-сервер для звонков): читают все, меняют админы
+    match /config/{key} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     // Список админов ведёт владелец

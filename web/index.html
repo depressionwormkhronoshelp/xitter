@@ -255,6 +255,16 @@
           <div class="scroller" id="adminView">
             <div id="adminOverview">
               <div class="stat-grid" id="adminStats"></div>
+              <div class="turn-box">
+                <h3>Звонки: TURN-сервер</h3>
+                <p class="fine">Нужен, чтобы звонки соединялись между разными сетями (мобильный интернет, чужой Wi-Fi). Если поля пустые, используется бесплатный Open Relay. Свой сервер можно бесплатно получить на metered.ca или поднять coturn.</p>
+                <label class="field"><span>Адреса через запятую</span><input class="input" id="turnUrls" placeholder="turn:example.com:3478, turns:example.com:443" autocapitalize="none" /></label>
+                <div class="buy-row">
+                  <label class="field"><span>Логин</span><input class="input" id="turnUser" autocapitalize="none" autocomplete="off" /></label>
+                  <label class="field"><span>Пароль</span><input class="input" id="turnPass" autocapitalize="none" autocomplete="off" /></label>
+                </div>
+                <button class="btn-black" id="turnSave">Сохранить</button>
+              </div>
             </div>
             <div id="adminUsersBox" hidden>
               <label class="search"><svg><use href="#i-search"/></svg><input id="adminSearch" type="search" placeholder="Имя или @username" autocapitalize="none" /></label>
@@ -267,6 +277,7 @@
               <div class="field"><span>Картинка: эмодзи или файл (PNG, GIF)</span>
                 <div class="buy-row"><input class="input" id="nftEmoji" maxlength="8" placeholder="🍦" /><button type="button" class="btn-soft small" id="nftImageBtn">Загрузить картинку</button></div>
               </div>
+              <label class="check-row"><input type="checkbox" id="nftFull" disabled /><span>На весь экран<small>Картинка или гифка заполняет весь подарок, без фона. Для эмодзи не работает.</small></span></label>
               <label class="field"><span>Описание</span><input class="input" id="nftDesc" maxlength="200" placeholder="Необязательно" /></label>
               <div class="buy-row">
                 <label class="field"><span>Цена, LUNE</span><input class="input" id="nftPrice" type="number" min="1" value="500" /></label>
@@ -414,6 +425,7 @@
       <nav class="seg-text" id="giftSeg"><button data-g="gifts" class="active">Подарки</button><button data-g="nft">Мои NFT</button></nav>
       <div class="sheet-body">
         <div class="gift-grid" id="giftGrid"></div>
+        <div class="gift-count" id="giftCount"><span>Количество</span><button type="button" data-cnt="-1" aria-label="Меньше">−</button><input class="input" id="giftQty" type="number" min="1" max="999" value="1" inputmode="numeric" /><button type="button" data-cnt="1" aria-label="Больше">+</button></div>
         <input class="input" id="giftText" maxlength="120" placeholder="Подпись к подарку (необязательно)" />
         <button class="btn-black" id="giftSendBtn" disabled>Выберите подарок</button>
       </div>
