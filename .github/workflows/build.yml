@@ -144,7 +144,17 @@ jobs:
         run: |
           sudo apt-get install -y lftp >/dev/null
           # файлы только добавляются и обновляются, чужие файлы на хостинге не удаляются
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_SERVER" -e "set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 2; set net:timeout 30; pwd; cd $FTP_DIR || echo 'Папки нет, загружаю в домашнюю папку FTP'; pwd; mirror -R --verbose web .; ls; bye"
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_SERVER" -e "set cmd:fail-exit yes; set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 2; set net:timeout 30; pwd; cd $FTP_DIR || echo 'Папки нет, загружаю в домашнюю папку FTP'; pwd; mirror -R --verbose web .; ls; bye"
+      - name: Проверка сайта https://x.lozhka.fun
+        if: env.FTP_SERVER != ''
+        run: |
+          sleep 5
+          for u in https://x.lozhka.fun/ http://x.lozhka.fun/; do
+            echo "== $u"; curl -sSL --max-time 20 -o page.html -w "HTTP %{http_code}\n" "$u" || true
+            grep -o "<title>[^<]*</title>" page.html || head -c 300 page.html; echo
+            grep -q "backend.js" page.html && grep -q "<title>Xitter</title>" page.html && echo "Xitter на месте: $u"
+          done
+          curl -sSL --max-time 20 https://x.lozhka.fun/backend.js | head -c 120; echo
       - name: Пропуск
         if: env.FTP_SERVER == ''
         run: echo "Секреты FTP не заданы, выкладка на хостинг пропущена"
