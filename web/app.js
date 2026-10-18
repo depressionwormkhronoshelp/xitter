@@ -9,9 +9,25 @@
     /XitterApp/.test(navigator.userAgent);
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+  // настройки внешнего вида дублируются в куки: их не теряем, даже если браузер чистит localStorage
+  const COOKIE_KEYS = ['theme', 'icon', 'themeColors'];
+  const cookie = {
+    get(k) { const m = document.cookie.match(new RegExp('(?:^|; )xitter_' + k + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; },
+    set(k, v) {
+      try { document.cookie = `xitter_${k}=${v == null ? '' : encodeURIComponent(v)}; path=/; max-age=${v == null ? 0 : 400 * 864e2}; SameSite=Lax`; } catch {}
+    },
+  };
   const store = {
-    get(k) { try { return localStorage.getItem('xitter.' + k); } catch { return null; } },
-    set(k, v) { try { v == null ? localStorage.removeItem('xitter.' + k) : localStorage.setItem('xitter.' + k, v); } catch {} },
+    get(k) {
+      let v = null;
+      try { v = localStorage.getItem('xitter.' + k); } catch {}
+      if (v == null && COOKIE_KEYS.includes(k)) v = cookie.get(k);
+      return v;
+    },
+    set(k, v) {
+      try { v == null ? localStorage.removeItem('xitter.' + k) : localStorage.setItem('xitter.' + k, v); } catch {}
+      if (COOKIE_KEYS.includes(k)) cookie.set(k, v);
+    },
   };
 
   const COLORS = [
@@ -410,6 +426,8 @@
     renderWallet();
     renderIconPicker();
     // Plus закончился: своя тема и иконка возвращаются к обычным
+    // (только когда статус уже загружен, иначе при обновлении страницы всё сбрасывалось)
+    if (!S.me.statusLoaded) return;
     if (!S.me.plus && store.get('theme') === 'custom') { store.set('theme', null); applyTheme(null); }
     if (!S.me.plus && store.get('icon')) { store.set('icon', null); setAppIcon('orange'); }
   }

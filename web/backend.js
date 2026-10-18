@@ -105,6 +105,7 @@
       banned: !!st.banned,
       restricted: !!st.restricted,
       usernames: st.usernames || [],
+      statusLoaded: statuses.has(uid),
     };
     if (!u) return { id: uid, username: '', name: '…', bio: '', colors: COLORS[0], online: false, lastSeen: null, following: [], style: {}, ...perks };
     return {
