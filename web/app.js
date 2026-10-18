@@ -630,7 +630,7 @@
       </div>
       ${p.text ? `<p class="post-text" ${opts.full ? '' : 'data-open'}>${esc(p.text)}</p>` : ''}
       ${p.image ? `<div class="post-img" data-img><img src="${esc(p.image)}" alt="" loading="lazy" /></div>` : ''}
-      ${p.file && p.file.id ? `<div class="bubble file-bubble post-file" data-file="${esc(p.file.id)}"><span class="ficon"><svg><use href="#i-${/^audio\//.test(p.file.type) ? 'play' : 'file'}"/></svg></span><span class="fmeta"><b>${esc(p.file.name)}</b><small>${fmtSize(p.file.size)} · ${/^audio\//.test(p.file.type) ? 'слушать' : /^(video|image)\//.test(p.file.type) ? 'открыть' : 'скачать'}</small></span></div>` : ''}
+      ${p.file && p.file.id ? `<div class="bubble file-bubble post-file" data-file="${esc(p.file.id)}"><span class="ficon"><svg><use href="#i-${/^audio\//.test(p.file.type) ? (profileMusic.id === p.file.id && profileMusic.playing ? 'pause' : 'play') : 'file'}"/></svg></span><span class="fmeta"><b>${esc(p.file.name)}</b><small>${fmtSize(p.file.size)} · ${/^audio\//.test(p.file.type) ? (profileMusic.id === p.file.id && profileMusic.playing ? 'играет' : 'слушать') : /^(video|image)\//.test(p.file.type) ? 'открыть' : 'скачать'}</small></span></div>` : ''}
       <div class="post-actions">
         <button class="like ${liked ? 'on' : ''}" data-like aria-label="Нравится">${HEART}<span>${likes ? num(likes) : ''}</span></button>
         <button data-open aria-label="Комментарии"><svg><use href="#i-comment"/></svg><span>${comments ? num(comments) : ''}</span></button>
@@ -1422,7 +1422,7 @@
       const f = await B.fileURL(id);
       if (/^image\//.test(f.type)) openViewer(f.url);
       else if (/^video\//.test(f.type)) openViewer(f.url, true);
-      else if (/^audio\//.test(f.type)) { profileMusic.id = null; toggleProfileMusic(id); }
+      else if (/^audio\//.test(f.type)) toggleProfileMusic(id); // повторное нажатие ставит на паузу
       else {
         const a = document.createElement('a');
         a.href = f.url; a.download = f.name;
