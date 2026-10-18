@@ -1,0 +1,19 @@
+{
+  "name": "xitter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Xitter — мессенджер с Liquid Glass: веб, Android, iOS",
+  "scripts": {
+    "server": "cd server && npm install && npm start",
+    "apk": "bash android/build.sh",
+    "ios": "bash ios-build.sh",
+    "cap:sync": "cap sync"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

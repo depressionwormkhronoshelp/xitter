@@ -1,0 +1,16 @@
+node_modules/
+server/data/
+build/
+android/build/
+android/assets/
+android/android-34.jar
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+web/download/
+dist/
+*.idsig
+*.log
+.firebase/
+.DS_Store
+android/*.keystore

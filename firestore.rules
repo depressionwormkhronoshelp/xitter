@@ -1,0 +1,48 @@
+rules_version = '2';
+// Правила безопасности Firestore для Xitter.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isMember(chatId) {
+      return uid() in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+    }
+
+    // Профили видны всем вошедшим, менять можно только свой
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && uid() == userId;
+    }
+
+    // Чаты видят и меняют только участники; состав участников менять нельзя
+    match /chats/{chatId} {
+      allow get: if signedIn() && (resource == null || uid() in resource.data.members);
+      allow list: if signedIn() && uid() in resource.data.members;
+      allow create: if signedIn() && uid() in request.resource.data.members
+        && request.resource.data.members.size() <= 200;
+      allow update: if signedIn() && uid() in resource.data.members
+        && request.resource.data.members == resource.data.members;
+
+      match /messages/{messageId} {
+        allow read: if signedIn() && isMember(chatId);
+        allow create: if signedIn() && isMember(chatId)
+          && request.resource.data.from == uid()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 4000;
+      }
+    }
+
+    // Звонки: доступ только у звонящего и того, кому звонят
+    match /calls/{callId} {
+      allow get: if signedIn() && (resource == null || uid() == resource.data.from || uid() == resource.data.to);
+      allow list, update: if signedIn() && (uid() == resource.data.from || uid() == resource.data.to);
+      allow create: if signedIn() && request.resource.data.from == uid();
+
+      match /candidates/{candId} {
+        allow read, create: if signedIn() && (
+          uid() == get(/databases/$(database)/documents/calls/$(callId)).data.from ||
+          uid() == get(/databases/$(database)/documents/calls/$(callId)).data.to);
+      }
+    }
+  }
+}

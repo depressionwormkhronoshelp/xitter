@@ -1,0 +1,14 @@
+{
+  "appId": "com.xitter.app",
+  "appName": "Xitter",
+  "webDir": "web",
+  "backgroundColor": "#FFF7F0",
+  "ios": {
+    "contentInset": "never",
+    "scheme": "Xitter",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "server": {
+    "cleartext": true
+  }
+}

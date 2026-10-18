@@ -1,0 +1,143 @@
+# Сборка Xitter: APK, IPA, веб-версия и сервер.
+# Запускается при каждом push в main и вручную (Actions → Build Xitter → Run workflow).
+# Готовые файлы: в Artifacts каждого запуска и в релизе «latest» (вкладка Releases).
+name: Build Xitter
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Инструменты Android
+        run: sudo apt-get update && sudo apt-get install -y aapt zipalign apksigner dalvik-exchange
+      - name: Сборка APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: bash android/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xitter-android
+          path: dist/Xitter.apk
+
+  ios:
+    name: iOS (.ipa, без подписи)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Сборка IPA
+        run: bash ios-build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xitter-ios
+          path: dist/Xitter-unsigned.ipa
+
+  web:
+    name: Веб-версия
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Xitter-android
+          path: web/download
+      - name: Архив веб-версии
+        run: mkdir -p dist && (cd web && zip -qr ../dist/Xitter-web.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xitter-web
+          path: dist/Xitter-web.zip
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  server:
+    name: Сервер
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Сервер с зависимостями
+        run: |
+          cd server && npm install --omit=dev && cd ..
+          mkdir -p dist/Xitter-server
+          cp -r server web start-server.sh start-server.command start-server.bat README.md dist/Xitter-server/
+          rm -rf dist/Xitter-server/server/data
+          (cd dist && zip -qr Xitter-server.zip Xitter-server)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xitter-server
+          path: dist/Xitter-server.zip
+
+  pages:
+    name: Публикация на GitHub Pages
+    needs: web
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    continue-on-error: true # включите Pages: Settings → Pages → Source: GitHub Actions
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  firebase:
+    name: Правила Firestore и Firebase Hosting
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Деплой (нужен секрет FIREBASE_SERVICE_ACCOUNT)
+        if: env.SA != ''
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx -y firebase-tools@15 deploy --only firestore:rules,hosting --project xittererere --non-interactive
+      - name: Пропуск
+        if: env.SA == ''
+        run: echo "Секрет FIREBASE_SERVICE_ACCOUNT не задан, деплой в Firebase пропущен (см. README)."
+
+  release:
+    name: Релиз latest
+    needs: [android, ios, web, server]
+    if: always() && github.ref == 'refs/heads/main' && needs.android.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Обновить релиз latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la out
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest out/* --title "Xitter (последняя сборка)" --target "${{ github.sha }}" \
+            --notes "Автосборка из ${{ github.sha }}. Xitter.apk — Android, Xitter-unsigned.ipa — iPhone (подписать через Sideloadly/AltStore), Xitter-web.zip — веб-версия, Xitter-server.zip — сервер для своего компьютера." \
+            --prerelease

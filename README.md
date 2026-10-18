@@ -1,0 +1,68 @@
+# Xitter
+
+Мессенджер в стиле Liquid Glass: оранжево-белые градиенты, стеклянные панели, анимации как в iPhone. Личные чаты и группы, «печатает…», «в сети», галочки прочтения, светлая и тёмная тема, аудио- и видеозвонки.
+
+Все данные и сообщения хранятся в **Firebase** (проект `xittererere`), поэтому Xitter работает через интернет откуда угодно, держать компьютер включённым не нужно.
+
+## Скачать
+
+Каждый push в `main` собирает всё заново через GitHub Actions. Готовые файлы лежат в **Releases → latest**:
+
+| Файл | Что это |
+|---|---|
+| `Xitter.apk` | Android |
+| `Xitter-unsigned.ipa` | iPhone, без подписи (см. ниже) |
+| `Xitter-web.zip` | веб-версия, можно выложить на любой хостинг |
+| `Xitter-server.zip` | сервер для своего компьютера, раздаёт веб-версию |
+
+Веб-версия также публикуется на GitHub Pages, если Pages включены (Settings → Pages → Source: **GitHub Actions**).
+
+## Один раз настроить Firebase
+
+1. Откройте [консоль Firebase](https://console.firebase.google.com/project/xittererere/firestore) → **Firestore Database** → **Create database** (любой регион, режим production).
+2. Вкладка **Rules** → вставьте содержимое файла [`firestore.rules`](firestore.rules) → **Publish**.
+3. Вход по паролю (Authentication → Sign-in method → Email/Password) уже включён.
+
+Чтобы GitHub Actions сам обновлял правила и публиковал сайт на `https://xittererere.web.app`:
+Firebase → ⚙ Project settings → Service accounts → **Generate new private key**, затем в GitHub: Settings → Secrets and variables → Actions → **New repository secret** с именем `FIREBASE_SERVICE_ACCOUNT` и содержимым скачанного JSON.
+
+## Android
+
+Установите `Xitter.apk`, разрешив установку из неизвестных источников. Зарегистрируйтесь: имя пользователя и пароль от 6 символов.
+
+Чтобы обновления APK ставились поверх старой версии, все сборки должны подписываться одним ключом. Создайте его один раз:
+
+```
+keytool -genkeypair -keystore xitter.keystore -alias xitter -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 xitter.keystore
+```
+
+и добавьте в GitHub (Settings → Secrets and variables → Actions) секреты `ANDROID_KEYSTORE_BASE64` (вывод второй команды) и `ANDROID_KEYSTORE_PASSWORD` (пароль). Без них каждая сборка подписывается временным ключом.
+
+## iPhone
+
+Apple не даёт поставить приложение без подписи. Варианты:
+
+- **Сайт как приложение:** откройте веб-версию в Safari → «Поделиться» → «На экран „Домой“».
+- **IPA:** скачайте `Xitter-unsigned.ipa` и установите через [Sideloadly](https://sideloadly.io) или [AltStore](https://altstore.io) со своим Apple ID. С бесплатным Apple ID приложение нужно переподписывать раз в 7 дней.
+- **Через Xcode на Mac:** `bash ios-build.sh open`, выберите свою команду в Signing & Capabilities и нажмите Run.
+
+## Свой сервер
+
+Нужен Node.js 22+. Распакуйте `Xitter-server.zip` и запустите `start-server.sh` (Linux/macOS) или `start-server.bat` (Windows). Веб-версия откроется на `http://localhost:3000`, а для звонков с других устройств в сети на `https://АДРЕС:3443`. Браузеры дают доступ к микрофону только по https; сертификат самоподписанный, поэтому нажмите «Дополнительно» → «Перейти».
+
+## Разработка
+
+```
+web/            интерфейс (HTML, CSS, JS без сборки)
+web/backend.js  работа с Firebase: вход, Firestore, сигналинг звонков
+web/vendor/     собранный Firebase JS SDK
+server/         сервер веб-версии
+android/        оболочка Android и скрипт сборки без Gradle
+ios/            проект Capacitor для Xcode
+firestore.rules правила безопасности базы
+```
+
+Звонки идут через WebRTC напрямую между устройствами, Firestore передаёт только служебные данные соединения. Если через мобильный интернет звонок не соединяется, нужен TURN-сервер: его можно указать в настройках браузера через `localStorage['xitter.turn']`.
+
+Проверка на эмуляторах Firebase: `npx firebase-tools emulators:start --only auth,firestore`, затем в консоли браузера `localStorage['xitter.emu'] = '127.0.0.1'` и перезагрузить страницу.

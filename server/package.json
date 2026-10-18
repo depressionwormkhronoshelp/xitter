@@ -1,0 +1,17 @@
+{
+  "name": "xitter-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Сервер веб-версии Xitter",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "selfsigned": "^2.4.1"
+  }
+}
