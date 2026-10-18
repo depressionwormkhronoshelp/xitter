@@ -109,6 +109,19 @@
   }
   // видео и GIF (аватарки и баннеры) подгружаются из файлов после отрисовки
   let hydrateTimer = 0;
+  // видео играет, только пока его видно: скрытые экраны и прокрученные посты не грузят процессор
+  const mediaSeen = new IntersectionObserver((list) => {
+    for (const e of list) {
+      if (e.isIntersecting && document.visibilityState === 'visible') e.target.play().catch(() => {});
+      else e.target.pause();
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    for (const v of document.querySelectorAll('video.amedia')) {
+      if (document.visibilityState !== 'visible') v.pause();
+      else { mediaSeen.unobserve(v); mediaSeen.observe(v); }
+    }
+  });
   function hydrateMedia() {
     for (const el of document.querySelectorAll('[data-media]')) {
       const id = el.dataset.media;
@@ -120,9 +133,10 @@
         const vid = /^video\//.test(f.type);
         const m = document.createElement(vid ? 'video' : 'img');
         m.className = 'amedia';
-        if (vid) { m.muted = true; m.loop = true; m.autoplay = true; m.playsInline = true; m.setAttribute('playsinline', ''); }
+        if (vid) { m.muted = true; m.loop = true; m.playsInline = true; m.setAttribute('playsinline', ''); m.preload = 'auto'; }
         m.src = f.url;
         el.prepend(m);
+        if (vid) mediaSeen.observe(m);
         el.classList.add('has-media');
       }).catch(() => {});
     }
