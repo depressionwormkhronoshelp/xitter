@@ -121,6 +121,34 @@ jobs:
         if: env.SA == ''
         run: echo "Секрет FIREBASE_SERVICE_ACCOUNT не задан, деплой в Firebase пропущен (см. README)."
 
+  ftp:
+    name: Выкладка на хостинг по FTP
+    needs: android
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_DIR: ${{ secrets.FTP_DIR }}
+    steps:
+      - uses: actions/checkout@v5
+        if: env.FTP_SERVER != ''
+      - uses: actions/download-artifact@v5
+        if: env.FTP_SERVER != ''
+        with:
+          name: Xitter-android
+          path: web/download
+      - name: Загрузка веб-версии (нужны секреты FTP_SERVER, FTP_USERNAME, FTP_PASSWORD)
+        if: env.FTP_SERVER != ''
+        run: |
+          sudo apt-get install -y lftp >/dev/null
+          # файлы только добавляются и обновляются, чужие файлы на хостинге не удаляются
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_SERVER" -e "set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 2; mirror -R --verbose web ${FTP_DIR:-/}; bye"
+      - name: Пропуск
+        if: env.FTP_SERVER == ''
+        run: echo "Секреты FTP не заданы, выкладка на хостинг пропущена"
+
   release:
     name: Релиз latest
     needs: [android, ios, web, server]
