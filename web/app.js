@@ -438,18 +438,27 @@
     }
     let html = '';
     const isGroup = chat.type === 'group';
+    let lastMine = -1;
+    msgs.forEach((m, i) => { if (m.from === S.me.id) lastMine = i; });
+    const emojiOnly = (t) => /^(\p{Extended_Pictographic}|\p{Emoji_Component}|\u200d|\ufe0f|\s){1,12}$/u.test(t) && !/^[\d#*\s]+$/.test(t);
     msgs.forEach((m, i) => {
       const prev = msgs[i - 1], next = msgs[i + 1];
-      if (!prev || !sameDay(prev.ts, m.ts)) html += `<div class="day">${fmtDay(m.ts)}</div>`;
+      // как в iMessage: метка времени, если новый день или пауза больше часа
+      if (!prev || !sameDay(prev.ts, m.ts) || m.ts - prev.ts > 3600e3) html += `<div class="day"><b>${fmtDay(m.ts)}</b> ${fmtTime(m.ts)}</div>`;
       const mine = m.from === S.me.id;
-      const tail = !next || next.from !== m.from || !sameDay(next.ts, m.ts) || next.ts - m.ts > 5 * 60e3;
-      const first = !prev || prev.from !== m.from || !sameDay(prev.ts, m.ts) || m.ts - prev.ts > 5 * 60e3;
+      const gapNext = next && (next.from !== m.from || !sameDay(next.ts, m.ts) || next.ts - m.ts > 3600e3);
+      const tail = !next || gapNext || next.ts - m.ts > 60e3;
+      const first = !prev || prev.from !== m.from || !sameDay(prev.ts, m.ts) || m.ts - prev.ts > 3600e3;
       const sender = isGroup && !mine && first ? (chat.members.find((x) => x && x.id === m.from) || {}).name : null;
-      const tick = mine ? (m.pending ? '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>' : isReadByOthers(chat, m) ? CHECK2 : CHECK) : '';
-      html += `<div class="msg ${mine ? 'me' : 'them'} ${tail ? 'tail' : ''} ${animateIds.has(m.id) ? 'new' : ''} ${m.pending ? 'pending' : ''}" data-id="${m.id}">
+      html += `<div class="msg ${mine ? 'me' : 'them'} ${tail ? 'tail' : ''} ${animateIds.has(m.id) ? 'new' : ''} ${m.pending ? 'pending' : ''}" data-id="${m.id}" title="${fmtTime(m.ts)}">
         ${sender ? `<div class="sender">${esc(sender)}</div>` : ''}
-        <div class="bubble">${esc(m.text)}<span class="meta">${fmtTime(m.ts)}${tick}</span></div>
+        <div class="bubble ${emojiOnly(m.text) ? 'emoji-only' : ''}">${esc(m.text)}</div>
       </div>`;
+      if (i === lastMine && i === msgs.length - 1) {
+        const read = !m.pending && isReadByOthers(chat, m);
+        const readTs = read ? Math.max(...Object.entries(chat.lastRead || {}).filter(([u]) => u !== S.me.id).map(([, t]) => t)) : 0;
+        html += `<div class="receipt">${m.pending ? 'Отправка…' : read ? `<b>Прочитано</b> ${fmtTime(readTs)}` : 'Доставлено'}</div>`;
+      }
     });
     const typing = isTyping(chat.id);
     if (typing) html += `<div class="typing-row msg them"><div class="bubble"><i></i><i></i><i></i></div></div>`;
@@ -687,9 +696,10 @@
       el.classList.toggle('incoming', !!incoming);
       el.classList.remove('active', 'closing');
       el.hidden = false;
-      $('#camBtn').hidden = $('#flipBtn').hidden = !video;
-      $('#muteBtn').classList.remove('on');
-      $('#camBtn').classList.remove('on');
+      ['#muteBtn', '#camBtn', '#speakerBtn'].forEach((s) => $(s).classList.remove('on'));
+      $('#camBtn').classList.toggle('dim', !video);
+      el.classList.remove('keypad-open', 'cam-off');
+      $('#keypadDigits').textContent = '';
       document.body.classList.add('calling');
     }
 
@@ -786,7 +796,7 @@
       const peer = otherMember(chat);
       c = { id: Math.random().toString(36).slice(2), peer, chatId: chat.id, video, outgoing: true, ice: [] };
       show(peer, video, false);
-      setState('Вызов…');
+      setState(video ? 'Xitter Видео…' : 'Xitter Аудио…');
       startRing(false);
       try {
         const local = await getMedia(video);
@@ -871,7 +881,7 @@
           const peer = (chat && otherMember(chat)) || { id: d.from, name: d.fromName, colors: d.fromColors };
           c = { id: d.callId, peer, chatId: d.chatId, video: !!d.video, outgoing: false, offer: d.sdp, ice: [] };
           show(peer, d.video, true);
-          setState(d.video ? 'Входящий видеозвонок' : 'Входящий аудиозвонок');
+          setState(d.video ? 'Xitter Видео' : 'Xitter Аудио');
           startRing(true);
           c.timeout = setTimeout(() => { if (c && !c.pc) cleanup(); }, 45000);
           break;
@@ -903,6 +913,44 @@
     $('#acceptBtn').addEventListener('click', accept);
     $('#declineBtn').addEventListener('click', decline);
     $('#hangupBtn').addEventListener('click', () => end(null));
+    $('#hangupBtn2').addEventListener('click', () => end(null));
+    $('#speakerBtn').addEventListener('click', (e) => {
+      const on = e.currentTarget.classList.toggle('on');
+      remoteV.volume = on ? 1 : 0.6;
+      haptic(6);
+    });
+    $('#addBtn').addEventListener('click', () => toast('Групповые звонки появятся позже'));
+    $('#infoBtn').addEventListener('click', () => c && toast(c.peer.username ? '@' + c.peer.username : c.peer.name));
+    $('#keypadBtn').addEventListener('click', () => el.classList.add('keypad-open'));
+    $('#keypadHide').addEventListener('click', () => el.classList.remove('keypad-open'));
+    // тоны клавиш (DTMF)
+    const DTMF = { 1: [697, 1209], 2: [697, 1336], 3: [697, 1477], 4: [770, 1209], 5: [770, 1336], 6: [770, 1477], 7: [852, 1209], 8: [852, 1336], 9: [852, 1477], '*': [941, 1209], 0: [941, 1336], '#': [941, 1477] };
+    $$('.keypad-grid button').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.k;
+      $('#keypadDigits').textContent = ($('#keypadDigits').textContent + k).slice(-16);
+      const ctx = audioCtx();
+      if (ctx) {
+        const g = ctx.createGain();
+        g.gain.value = 0.08;
+        g.connect(ctx.destination);
+        DTMF[k].forEach((f) => { const o = ctx.createOscillator(); o.frequency.value = f; o.connect(g); o.start(); o.stop(ctx.currentTime + 0.15); });
+      }
+      try { c && c.pc && c.pc.getSenders().find((x) => x.dtmf)?.dtmf.insertDTMF(k); } catch {}
+      haptic(5);
+    }));
+    $('#msgBtn').addEventListener('click', () => {
+      if (!c) return;
+      const chatId = c.chatId;
+      decline();
+      if (S.chats.has(chatId)) setTimeout(() => { openChat(chatId); $('#msgInput').focus(); }, 450);
+    });
+    $('#vmBtn').addEventListener('click', () => {
+      if (!c) return;
+      const chatId = c.chatId;
+      decline();
+      sendText(chatId, 'Не могу сейчас говорить, перезвоню позже.');
+      toast('Отправлен автоответ');
+    });
     $('#muteBtn').addEventListener('click', (e) => {
       if (!c || !c.local) return;
       const btn = e.currentTarget;
@@ -912,6 +960,7 @@
     });
     $('#camBtn').addEventListener('click', (e) => {
       if (!c || !c.local) return;
+      if (!c.local.getVideoTracks().length) { toast('Это аудиозвонок. Для видео позвоните по видео'); return; }
       const off = e.currentTarget.classList.toggle('on');
       c.local.getVideoTracks().forEach((t) => (t.enabled = !off));
       el.classList.toggle('cam-off', off);

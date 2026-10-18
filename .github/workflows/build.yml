@@ -20,9 +20,9 @@ concurrency:
 jobs:
   android:
     name: Android (.apk)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Инструменты Android
         run: sudo apt-get update && sudo apt-get install -y aapt zipalign apksigner dalvik-exchange
       - name: Сборка APK
@@ -30,7 +30,7 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: bash android/build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Xitter-android
           path: dist/Xitter.apk
@@ -39,13 +39,13 @@ jobs:
     name: iOS (.ipa, без подписи)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Сборка IPA
         run: bash ios-build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Xitter-ios
           path: dist/Xitter-unsigned.ipa
@@ -55,14 +55,14 @@ jobs:
     needs: android
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           name: Xitter-android
           path: web/download
       - name: Архив веб-версии
         run: mkdir -p dist && (cd web && zip -qr ../dist/Xitter-web.zip .)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Xitter-web
           path: dist/Xitter-web.zip
@@ -74,8 +74,8 @@ jobs:
     name: Сервер
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Сервер с зависимостями
@@ -85,7 +85,7 @@ jobs:
           cp -r server web start-server.sh start-server.command start-server.bat README.md dist/Xitter-server/
           rm -rf dist/Xitter-server/server/data
           (cd dist && zip -qr Xitter-server.zip Xitter-server)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Xitter-server
           path: dist/Xitter-server.zip
@@ -110,7 +110,7 @@ jobs:
     env:
       SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Деплой (нужен секрет FIREBASE_SERVICE_ACCOUNT)
         if: env.SA != ''
         run: |
@@ -127,7 +127,7 @@ jobs:
     if: always() && github.ref == 'refs/heads/main' && needs.android.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: out
           merge-multiple: true
