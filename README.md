@@ -10,6 +10,8 @@
 
 | Файл | Что это |
 |---|---|
+| `Xitter.exe` | Windows, запускается без установки |
+| `Xitter-Setup.exe` | Установщик для Windows (ярлык в меню «Пуск») |
 | `Xitter.apk` | Android |
 | `Xitter-unsigned.ipa` | iPhone, без подписи (см. ниже) |
 | `Xitter-web.zip` | веб-версия, можно выложить на любой хостинг |

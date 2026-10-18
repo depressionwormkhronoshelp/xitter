@@ -35,6 +35,26 @@ jobs:
           name: Xitter-android
           path: dist/Xitter.apk
 
+  windows:
+    name: Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Сборка .exe
+        working-directory: desktop
+        run: |
+          npm ci --no-audit --no-fund
+          npm run dist
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Xitter-windows
+          path: |
+            desktop/dist/Xitter.exe
+            desktop/dist/Xitter-Setup.exe
+
   ios:
     name: iOS (.ipa, без подписи)
     runs-on: macos-latest
@@ -163,7 +183,7 @@ jobs:
 
   release:
     name: Релиз latest
-    needs: [android, ios, web, server]
+    needs: [android, ios, windows, web, server]
     if: always() && github.ref == 'refs/heads/main' && needs.android.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -180,5 +200,5 @@ jobs:
           ls -la out
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest out/* --title "Xitter (последняя сборка)" --target "${{ github.sha }}" \
-            --notes "Автосборка из ${{ github.sha }}. Xitter.apk — Android, Xitter-unsigned.ipa — iPhone (подписать через Sideloadly/AltStore), Xitter-web.zip — веб-версия, Xitter-server.zip — сервер для своего компьютера." \
+            --notes "Автосборка из ${{ github.sha }}. Xitter.exe — Windows без установки, Xitter-Setup.exe — установщик для Windows, Xitter.apk — Android, Xitter-unsigned.ipa — iPhone (подписать через Sideloadly/AltStore), Xitter-web.zip — веб-версия, Xitter-server.zip — сервер для своего компьютера." \
             --prerelease

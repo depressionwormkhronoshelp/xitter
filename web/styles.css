@@ -692,3 +692,4 @@ body.as-open .sheet-backdrop { opacity: 1; pointer-events: auto; z-index: 55; }
   /* вход — карточка по центру */
   .auth-wrap { max-width: 440px; margin: 0 auto; }
 }
+.scroller { scrollbar-width: thin; }
