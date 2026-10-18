@@ -18,7 +18,7 @@
     GoogleAuthProvider, OAuthProvider, signInWithPopup,
     initializeFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, deleteField,
     collection, query, where, orderBy, limit, limitToLast, onSnapshot, increment, writeBatch, runTransaction,
-    arrayUnion, arrayRemove,
+    arrayUnion, arrayRemove, serverTimestamp,
   } = window.FB;
 
   const app = initializeApp(firebaseConfig);
@@ -50,6 +50,7 @@
   let cbs = {};
   let unsubs = [];
   let heartbeat = null;
+  let clockOffset = 0; // время сервера минус время этого устройства
 
   // ---------- ошибки ----------
   const emitError = (msg) => window.dispatchEvent(new CustomEvent('xitter-error', { detail: msg }));
@@ -117,6 +118,8 @@
     userUnsubs.set(uid, onSnapshot(doc(db, 'users', uid), (s) => {
       if (!s.exists()) return;
       users.set(uid, s.data());
+      const d = s.data();
+      if (uid === me && !s.metadata.hasPendingWrites && d.serverSeen && d.lastSeen && d.serverSeen.toMillis) clockOffset = d.serverSeen.toMillis() - d.lastSeen;
       if (uid === me && cbs.onMe) cbs.onMe(publicUser(me));
       emitAll();
     }, (e) => console.warn('Xitter:', e.code || e)));
@@ -203,7 +206,7 @@
 
   function setPresence(online) {
     if (!me || !users.has(me)) return;
-    updateDoc(doc(db, 'users', me), { online, lastSeen: Date.now() }).catch(() => {});
+    updateDoc(doc(db, 'users', me), { online, lastSeen: Date.now(), serverSeen: serverTimestamp() }).catch(() => {});
   }
 
   // Запускает подписки после входа
@@ -444,16 +447,25 @@
   const callWatch = new Map(); // callId -> [unsub]
   const plain = (o) => (o ? JSON.parse(JSON.stringify(o)) : o);
 
+  // Часы на устройствах могут расходиться на минуты и часы, поэтому возраст звонка
+  // считаем по времени сервера. Новые вызовы, пришедшие после подписки, принимаем всегда.
   function listenIncomingCalls() {
+    let initial = true;
     unsubs.push(onSnapshot(query(collection(db, 'calls'), where('to', '==', me), where('status', '==', 'ringing')), (snap) => {
+      const first = initial;
+      initial = false;
       snap.docChanges().forEach((ch) => {
         if (ch.type !== 'added') return;
         const d = ch.doc.data();
-        if (Date.now() - (d.createdAt || 0) > 45e3) return;
+        if (first) {
+          const at = d.at && d.at.toMillis ? d.at.toMillis() : null;
+          const age = at != null ? Date.now() + clockOffset - at : Date.now() - (d.createdAt || 0);
+          if (age > 45e3) return;
+        }
         watchCall(ch.doc.id, false);
         cbs.onSignal && cbs.onSignal({ type: 'call:offer', callId: ch.doc.id, chatId: d.chatId, video: d.video, sdp: d.offer, from: d.from, fromName: d.fromName, fromColors: d.fromColors });
       });
-    }, (e) => console.warn('Xitter:', e.code || e)));
+    }, onErr));
   }
 
   function watchCall(callId, outgoing) {
@@ -490,7 +502,7 @@
     switch (d.type) {
       case 'call:offer': {
         const meU = publicUser(me);
-        setDoc(ref, { from: me, to: d.to, chatId: d.chatId, video: !!d.video, offer: plain(d.sdp), status: 'ringing', fromName: meU.name, fromColors: meU.colors, createdAt: Date.now() })
+        setDoc(ref, { from: me, to: d.to, chatId: d.chatId, video: !!d.video, offer: plain(d.sdp), status: 'ringing', fromName: meU.name, fromColors: meU.colors, createdAt: Date.now(), at: serverTimestamp() })
           .then(() => watchCall(d.callId, true))
           .catch(onErr);
         break;

@@ -974,7 +974,7 @@
       const old = prev.get(c.id);
       const lm = c.lastMessage;
       const isNew = !first && lm && lm.from !== S.me.id && (!old || !old.lastMessage || old.lastMessage.ts !== lm.ts);
-      if (isNew && (S.current !== c.id || document.visibilityState !== 'visible')) { haptic([12, 60, 12]); blip(); }
+      if (isNew && (S.current !== c.id || document.visibilityState !== 'visible')) { haptic([12, 60, 12]); blip(); notify(c.title, lm.text, 'chat-' + c.id); }
       if (S.current === c.id && c.unread && document.visibilityState === 'visible') B.markRead(c.id);
     }
     renderChats(first);
@@ -1399,6 +1399,23 @@
     } catch (err) { toast(err.message); }
   });
 
+  // ---------- системные уведомления (когда вкладка Xitter не на экране) ----------
+  function askNotify() {
+    try {
+      if (window.Notification && Notification.permission === 'default') Notification.requestPermission().catch?.(() => {});
+    } catch {}
+  }
+  // разрешение спрашиваем по первому касанию: браузеры не дают спросить без действия пользователя
+  addEventListener('pointerdown', function once() { if (S.started) { askNotify(); removeEventListener('pointerdown', once); } });
+  function notify(title, body, tag) {
+    if (document.visibilityState === 'visible') return;
+    try {
+      if (!window.Notification || Notification.permission !== 'granted') return;
+      const n = new Notification(title, { body, tag, icon: 'icons/icon-192.png', renotify: true, requireInteraction: tag === 'call' });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch {}
+  }
+
   // ---------- звуки ----------
   let actx;
   function audioCtx() {
@@ -1497,6 +1514,21 @@
         throw new Error('Нет доступа к микрофону' + (video ? ' или камере' : ''));
       }
     }
+    // Если микрофона или камеры нет (или страница открыта не по https), звонок всё равно идёт:
+    // собеседника слышно и видно, а нас — нет.
+    async function attachMedia(video) {
+      let local = null;
+      try { local = await getMedia(video); } catch (e) { toast(e.message + '. Звонок продолжится без вашего звука'); }
+      if (!c) { local && local.getTracks().forEach((t) => t.stop()); return false; }
+      c.local = local || new MediaStream();
+      localV.srcObject = c.local;
+      c.pc = makePC();
+      c.local.getTracks().forEach((t) => c.pc.addTrack(t, c.local));
+      if (!c.local.getAudioTracks().length) c.pc.addTransceiver('audio', { direction: 'recvonly' });
+      if (video && !c.local.getVideoTracks().length) c.pc.addTransceiver('video', { direction: 'recvonly' });
+      return true;
+    }
+
     function makePC() {
       const pc = new RTCPeerConnection(ICE);
       pc.onicecandidate = (e) => { if (e.candidate && c) wsSend({ type: 'call:ice', to: c.peer.id, callId: c.id, candidate: e.candidate }); };
@@ -1539,12 +1571,7 @@
       setState(video ? 'Xitter Видео…' : 'Xitter Аудио…');
       startRing(false);
       try {
-        const local = await getMedia(video);
-        if (!c) { local.getTracks().forEach((t) => t.stop()); return; }
-        c.local = local;
-        localV.srcObject = c.local;
-        c.pc = makePC();
-        c.local.getTracks().forEach((t) => c.pc.addTrack(t, c.local));
+        if (!(await attachMedia(video))) return;
         const offer = await c.pc.createOffer();
         await c.pc.setLocalDescription(offer);
         wsSend({ type: 'call:offer', to: peer.id, callId: c.id, chatId: chat.id, video, sdp: c.pc.localDescription });
@@ -1560,10 +1587,7 @@
       setState('Соединение…');
       el.classList.remove('incoming');
       try {
-        c.local = await getMedia(c.video);
-        localV.srcObject = c.local;
-        c.pc = makePC();
-        c.local.getTracks().forEach((t) => c.pc.addTrack(t, c.local));
+        if (!(await attachMedia(c.video))) return;
         await c.pc.setRemoteDescription(c.offer);
         await flushIce();
         const answer = await c.pc.createAnswer();
@@ -1615,6 +1639,7 @@
           show(peer, d.video, true);
           setState(d.video ? 'Xitter Видео' : 'Xitter Аудио');
           startRing(true);
+          notify(`${peer.name || 'Xitter'}`, d.video ? 'Входящий видеозвонок' : 'Входящий звонок', 'call');
           c.timeout = setTimeout(() => { if (c && !c.pc) cleanup(); }, 45000);
           break;
         }
