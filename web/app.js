@@ -11,6 +11,8 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   // настройки внешнего вида дублируются в куки: их не теряем, даже если браузер чистит localStorage
   const COOKIE_KEYS = ['theme', 'icon', 'themeColors'];
+  // согласие: 'all' — настройки дублируются в cookie, 'essential' — только localStorage
+  const consent = () => { try { return localStorage.getItem('xitter.consent') || cookie.get('consent'); } catch { return cookie.get('consent'); } };
   const cookie = {
     get(k) { const m = document.cookie.match(new RegExp('(?:^|; )xitter_' + k + '=([^;]*)')); return m ? decodeURIComponent(m[1]) : null; },
     set(k, v) {
@@ -26,7 +28,7 @@
     },
     set(k, v) {
       try { v == null ? localStorage.removeItem('xitter.' + k) : localStorage.setItem('xitter.' + k, v); } catch {}
-      if (COOKIE_KEYS.includes(k)) cookie.set(k, v);
+      if (COOKIE_KEYS.includes(k) && consent() === 'all') cookie.set(k, v);
     },
   };
 
@@ -370,6 +372,83 @@
       if (callConfig && callConfig.turn && callConfig.turn.length && !store.get('turn')) Call.setTurn(callConfig.turn);
     } catch (e) { console.warn(e); }
   }
+
+  // ---------- cookie: баннер согласия ----------
+  function setConsent(v) {
+    try { localStorage.setItem('xitter.consent', v); } catch {}
+    if (v === 'all') {
+      // запомнить выбор и сразу продублировать текущие настройки
+      cookie.set('consent', 'all');
+      COOKIE_KEYS.forEach((k) => { let x = null; try { x = localStorage.getItem('xitter.' + k); } catch {} if (x != null) cookie.set(k, x); });
+    } else {
+      cookie.set('consent', null);
+      COOKIE_KEYS.forEach((k) => cookie.set(k, null));
+    }
+    $('#cookieBanner').hidden = true;
+    renderCookieInfo();
+  }
+  function renderCookieInfo() {
+    $('#cookieInfo').textContent = consent() === 'all' ? 'Настройки дублируются в cookie' : consent() === 'essential' ? 'Только необходимые' : 'Выбор не сделан';
+  }
+  $('#cookieBanner').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-consent]');
+    if (b) setConsent(b.dataset.consent);
+  });
+  $('#cookieBtn').addEventListener('click', () => showActions([
+    { label: 'Разрешить cookie для настроек', fn: () => { setConsent('all'); toast('Настройки сохраняются и в cookie'); } },
+    { label: 'Только необходимые', fn: () => { setConsent('essential'); toast('Cookie с настройками удалены'); } },
+    { label: 'Политика cookie', fn: () => openLegal('cookies') },
+  ]));
+  if (!isApp && !consent()) $('#cookieBanner').hidden = false;
+  renderCookieInfo();
+
+  // ---------- документы ----------
+  const LEGAL = { privacy: 'Конфиденциальность', terms: 'Условия использования', refunds: 'Политика возврата', cookies: 'Политика cookie' };
+  function openLegal(name) {
+    $('#legalTitle').textContent = LEGAL[name] || 'Документ';
+    $('#legalFrame').src = `legal/${name}.html?embed=1`;
+    openSheet('legalSheet');
+  }
+  document.addEventListener('click', (e) => {
+    const l = e.target.closest('[data-legal]');
+    if (!l) return;
+    e.preventDefault();
+    openLegal(l.dataset.legal);
+  });
+
+  // ---------- мои данные: выгрузка и удаление ----------
+  $('#exportBtn').addEventListener('click', async (e) => {
+    try {
+      const data = await busy(e.currentTarget, () => B.exportMyData());
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `xitter-${(S.me && S.me.username) || 'data'}.json`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      toast('Файл с данными сохранён');
+    } catch (err) { toast(err.message); }
+  });
+  async function runWipe(account, btn) {
+    try {
+      await busy(btn, () => B.deleteMyData({ account, onProgress: (t) => toast('Удаляю: ' + t.toLowerCase() + '…') }));
+      if (account) { toast('Аккаунт удалён'); closeSheet(); setTimeout(() => location.reload(), 1200); return; }
+      toast('Ваши данные удалены');
+      closeSheet();
+    } catch (err) {
+      if (err.code === 'relogin') { toast(err.message); return; }
+      toast(err.message);
+    }
+  }
+  $('#wipeBtn').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    showActions([{ label: 'Удалить посты, комментарии, лайки, сообщения и файлы', danger: true, fn: () => runWipe(false, btn) }]);
+  });
+  $('#deleteAccountBtn').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    showActions([{ label: 'Удалить аккаунт навсегда', danger: true, fn: () => runWipe(true, btn) }]);
+  });
 
   // ---------- основной экран ----------
   let firstChats = true;
@@ -1391,7 +1470,7 @@
         <div class="group-row"><span>Дата</span><b>${esc(fmtDay(x.createdAt))}</b></div>
         <div class="group-row"><span>Стоимость</span><b>☾ ${num(x.price)}</b></div>
       </div>
-      ${mine ? `<button class="btn-black" data-sellgift="${esc(x.id)}">Продать за ☾ ${num(B.giftSellValue(x.price))}</button><p class="fine center">Подарок исчезнет из профиля, а вы получите 85% его стоимости.</p>` : ''}`;
+      ${mine ? `<button class="btn-black" data-sellgift="${esc(x.id)}">Продать за ☾ ${num(B.giftSellValue(x.price))}</button><p class="fine center">Комиссия при продаже 15%: из ☾ ${num(x.price)} вы получите ☾ ${num(B.giftSellValue(x.price))}. Подарок исчезнет из профиля.</p>` : ''}`;
     openSheet('nftSheet');
   }
   // шторка «Подарить»
@@ -1924,6 +2003,7 @@
     as.classList.remove('closing');
     as.hidden = false;
     document.body.classList.add('as-open');
+    setTimeout(() => box.querySelector('button')?.focus({ preventScroll: true }), 60);
     haptic(6);
   }
   function closeActions() {
@@ -2771,6 +2851,41 @@
     return { start, onSignal, setTurn, get active() { return !!c; } };
   })();
 
+  // меню сообщения: правая кнопка мыши, долгое нажатие или клавиша Delete / меню
+  function messageMenu(el) {
+    const msgs = S.messages.get(S.current) || [];
+    const m = msgs.find((x) => x.id === el.dataset.id);
+    if (!m) return;
+    const items = [];
+    if (m.text && !m.kind) items.push({ label: 'Скопировать', fn: () => { navigator.clipboard?.writeText(m.text).then(() => toast('Скопировано'), () => {}); } });
+    if (m.from === S.me.id && !m.pending) items.push({ label: 'Удалить у всех', danger: true, fn: async () => {
+      try { await B.deleteMessage(S.current, m.id); toast('Сообщение удалено'); } catch (err) { toast(err.message); }
+    } });
+    if (items.length) showActions(items);
+  }
+  $('#messages').addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.msg[data-id]');
+    if (!el) return;
+    e.preventDefault();
+    messageMenu(el);
+  });
+  {
+    let lp = 0, sx = 0, sy = 0;
+    $('#messages').addEventListener('touchstart', (e) => {
+      const el = e.target.closest('.msg[data-id]');
+      if (!el) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      lp = setTimeout(() => { lp = 0; haptic(10); messageMenu(el); }, 500);
+    }, { passive: true });
+    const cancel = () => { clearTimeout(lp); lp = 0; };
+    $('#messages').addEventListener('touchmove', (e) => { if (Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 8) cancel(); }, { passive: true });
+    $('#messages').addEventListener('touchend', cancel);
+  }
+  $('#messages').addEventListener('keydown', (e) => {
+    const el = e.target.closest('.msg[data-id]');
+    if (el && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); messageMenu(el); }
+  });
+
   $('#audioCallBtn').addEventListener('click', () => Call.start(false));
   $('#videoCallBtn').addEventListener('click', () => Call.start(true));
 
@@ -2787,6 +2902,48 @@
     return false;
   };
 
+  // ---------- навигация с клавиатуры ----------
+  // кликабельные строки и карточки получают фокус, Enter/пробел нажимает, Escape закрывает верхнее окно
+  const FOCUSABLE = 'li.row[data-id], li.row[data-uid], li.row[data-user], li.row[data-act], li.row[data-auid], li.row[data-chat], .nft-card, .post-text[data-open], .post-img, [data-view], .bubble[data-file], .bubble[data-recall], .gift-bubble[data-nft], .msg[data-id]';
+  function markFocusable(root) {
+    root.querySelectorAll(FOCUSABLE).forEach((el) => {
+      if (el.hasAttribute('tabindex')) return;
+      el.tabIndex = 0;
+      if (!el.matches('.msg')) el.setAttribute('role', 'button');
+    });
+  }
+  new MutationObserver(() => markFocusable(document.body)).observe(document.body, { childList: true, subtree: true });
+  markFocusable(document.body);
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    const typing = t.matches && t.matches('input, textarea, select, [contenteditable]');
+    if (e.key === 'Escape') {
+      if (typing && t.value) return;
+      if (typing) t.blur();
+      if (window.__xitterBack && window.__xitterBack()) e.preventDefault();
+      return;
+    }
+    if ((e.key === 'Enter' || e.key === ' ') && !typing && t.tabIndex >= 0 && t.matches(FOCUSABLE) && !t.matches('.msg')) {
+      e.preventDefault();
+      t.click();
+    }
+  });
+  // при открытии окна фокус переходит внутрь, при закрытии — обратно
+  let lastFocus = null;
+  new MutationObserver((list) => {
+    for (const m of list) {
+      const el = m.target;
+      if (!el.classList.contains('sheet')) continue;
+      if (el.classList.contains('open') && !m.oldValue?.includes('open')) {
+        lastFocus = document.activeElement;
+        setTimeout(() => el.querySelector('input:not([type=hidden]), button:not([disabled]), [tabindex="0"]')?.focus({ preventScroll: true }), 350);
+      } else if (!el.classList.contains('open') && m.oldValue?.includes(' open') && lastFocus && document.contains(lastFocus)) {
+        lastFocus.focus({ preventScroll: true });
+        lastFocus = null;
+      }
+    }
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'], attributeOldValue: true, subtree: true });
+
   // время «5 мин» в ленте само обновляется
   setInterval(() => { if (S.started && document.visibilityState === 'visible') schedule(); }, 60e3);
 
@@ -2795,6 +2952,7 @@
   applyTheme(store.get('theme'));
   if (store.get('icon')) setAppIcon(store.get('icon'));
   renderUpdate();
+  $('#buildFine').textContent = BUILD.run ? `Xitter · сборка ${BUILD.run}` : 'Xitter';
   if (BUILD.run) setTimeout(checkUpdate, 4000);
   B.onAuth((res) => {
     if (!res) { if (!S.started) showAuth(); return; }

@@ -92,6 +92,8 @@ jobs:
         shell: bash
         run: |
           echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
+          # сброс кэша: у файлов в index.html меняется ?v= при каждой сборке
+          sed -i -E 's#(href|src)="(fonts/fonts\.css|styles\.css|version\.js|vendor/firebase\.js|backend\.js|app\.js)"#\1="\2?v=${{ github.run_number }}"#g' web/index.html
       - uses: actions/download-artifact@v5
         with:
           name: Xitter-android
@@ -115,6 +117,8 @@ jobs:
         shell: bash
         run: |
           echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
+          # сброс кэша: у файлов в index.html меняется ?v= при каждой сборке
+          sed -i -E 's#(href|src)="(fonts/fonts\.css|styles\.css|version\.js|vendor/firebase\.js|backend\.js|app\.js)"#\1="\2?v=${{ github.run_number }}"#g' web/index.html
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -155,6 +159,8 @@ jobs:
         shell: bash
         run: |
           echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
+          # сброс кэша: у файлов в index.html меняется ?v= при каждой сборке
+          sed -i -E 's#(href|src)="(fonts/fonts\.css|styles\.css|version\.js|vendor/firebase\.js|backend\.js|app\.js)"#\1="\2?v=${{ github.run_number }}"#g' web/index.html
       - name: Деплой (нужен секрет FIREBASE_SERVICE_ACCOUNT)
         if: env.SA != ''
         run: |
@@ -181,6 +187,8 @@ jobs:
         shell: bash
         run: |
           echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
+          # сброс кэша: у файлов в index.html меняется ?v= при каждой сборке
+          sed -i -E 's#(href|src)="(fonts/fonts\.css|styles\.css|version\.js|vendor/firebase\.js|backend\.js|app\.js)"#\1="\2?v=${{ github.run_number }}"#g' web/index.html
         if: env.FTP_SERVER != ''
       - uses: actions/download-artifact@v5
         if: env.FTP_SERVER != ''

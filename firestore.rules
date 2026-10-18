@@ -35,11 +35,14 @@ service cloud.firestore {
       allow update: if signedIn() && uid() == userId && !isBanned()
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['style'])
           || isPlus(uid()) || request.resource.data.get('style', null) == null);
+      // удаление аккаунта
+      allow delete: if signedIn() && uid() == userId;
     }
 
     match /status/{userId} {
       allow read: if signedIn();
       allow create, update: if isAdmin() || buysUsername(userId) || spends(userId) || getsSalePayment(userId) || sellsGift(userId);
+      allow delete: if isAdmin() || (signedIn() && uid() == userId);
     }
 
     // ---------- траты LUNE: подарок, выпуск NFT, покупка NFT с рук ----------
@@ -111,8 +114,8 @@ service cloud.firestore {
         && getAfter(statusPath(uid())).data.spend == { 'k': 'gift', 'id': id };
       allow update: if signedIn() && resource.data.to == uid()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden']);
-      allow delete: if signedIn() && resource.data.to == uid()
-        && getAfter(statusPath(uid())).data.get('sold', '') == id;
+      // получатель может удалить подарок (при продаже или удалении данных)
+      allow delete: if signedIn() && resource.data.to == uid();
     }
 
     // NFT-подарки: коллекции создают админы, экземпляры выпускаются по одному за LUNE
@@ -151,6 +154,8 @@ service cloud.firestore {
             && getAfter(statusPath(uid())).data.spend == { 'k': 'buy', 'id': nid }
             && getAfter(statusPath(resource.data.owner)).data.sale == nid)
         );
+      // владелец может удалить свой NFT при удалении аккаунта
+      allow delete: if signedIn() && resource.data.owner == uid();
     }
 
     // Покупка дополнительного юзернейма: минус 100 LUNE и одно новое имя в списке;
@@ -193,6 +198,7 @@ service cloud.firestore {
         || (name in getAfter(statusPath(uid())).data.get('usernames', [])
           && !(name in st(uid()).get('usernames', [])))
       );
+      allow delete: if signedIn() && resource.data.uid == uid();
     }
 
     // Файлы, разбитые на части до 1 МБ: до 20 МБ, с Plus до 50 МБ
@@ -208,6 +214,7 @@ service cloud.firestore {
         allow create: if signedIn() && !isBanned()
           && get(/databases/$(database)/documents/files/$(fileId)).data.owner == uid()
           && request.resource.data.d is string && request.resource.data.d.size() <= 1000000;
+        allow delete: if signedIn() && get(/databases/$(database)/documents/files/$(fileId)).data.owner == uid();
       }
     }
 
@@ -226,14 +233,18 @@ service cloud.firestore {
         allow read: if signedIn();
         allow create: if canWrite() && request.resource.data.author == uid()
           && request.resource.data.text is string && request.resource.data.text.size() <= 1000;
-        allow delete: if signedIn() && (resource.data.author == uid() || isAdmin());
+        // комментарий удаляет автор, автор поста или админ
+        allow delete: if signedIn() && (resource.data.author == uid() || isAdmin()
+          || get(/databases/$(database)/documents/posts/$(postId)).data.author == uid());
       }
     }
 
     // Уведомления: создаёт тот, кто действует; читает и отмечает прочитанными получатель
     match /activity/{id} {
       allow create: if signedIn() && !isBanned() && request.resource.data.from == uid() && request.resource.data.to != uid();
-      allow read, update: if signedIn() && resource.data.to == uid();
+      allow update: if signedIn() && resource.data.to == uid();
+      // свои уведомления (полученные и созданные) можно прочитать для выгрузки и удалить
+      allow read, delete: if signedIn() && (resource.data.to == uid() || resource.data.from == uid());
     }
 
     // Чаты видят и меняют только участники; состав участников менять нельзя
@@ -242,8 +253,10 @@ service cloud.firestore {
       allow list: if signedIn() && uid() in resource.data.members;
       allow create: if canWrite() && uid() in request.resource.data.members
         && request.resource.data.members.size() <= 200;
+      // состав не меняется; можно только выйти самому (при удалении аккаунта)
       allow update: if signedIn() && uid() in resource.data.members
-        && request.resource.data.members == resource.data.members;
+        && (request.resource.data.members == resource.data.members
+          || request.resource.data.members == resource.data.members.removeAll([uid()]));
 
       match /messages/{messageId} {
         allow read: if signedIn() && isMember(chatId);
@@ -253,17 +266,19 @@ service cloud.firestore {
           && request.resource.data.text.size() <= 4000
           && (!('image' in request.resource.data) || request.resource.data.image.size() <= 950000)
           && (!('audio' in request.resource.data) || request.resource.data.audio.size() <= 950000);
+        // своё сообщение можно удалить (у всех)
+        allow delete: if signedIn() && resource.data.from == uid();
       }
     }
 
     // Звонки: доступ только у звонящего и того, кому звонят
     match /calls/{callId} {
       allow get: if signedIn() && (resource == null || uid() == resource.data.from || uid() == resource.data.to);
-      allow list, update: if signedIn() && (uid() == resource.data.from || uid() == resource.data.to);
+      allow list, update, delete: if signedIn() && (uid() == resource.data.from || uid() == resource.data.to);
       allow create: if canWrite() && request.resource.data.from == uid();
 
       match /candidates/{candId} {
-        allow read, create: if signedIn() && (
+        allow read, create, delete: if signedIn() && (
           uid() == get(/databases/$(database)/documents/calls/$(callId)).data.from ||
           uid() == get(/databases/$(database)/documents/calls/$(callId)).data.to);
       }

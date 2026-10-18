@@ -9,12 +9,11 @@
     storageBucket: 'xittererere.firebasestorage.app',
     messagingSenderId: '231494861072',
     appId: '1:231494861072:web:47ae00b55bc5066964a595',
-    measurementId: 'G-XD60M6NEX4',
   };
 
   const {
-    initializeApp, getAnalytics, analyticsSupported,
-    getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, connectAuthEmulator,
+    initializeApp,
+    getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, connectAuthEmulator, deleteUser,
     GoogleAuthProvider, OAuthProvider, signInWithPopup,
     initializeFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, deleteField,
     collection, query, where, orderBy, limit, limitToLast, onSnapshot, increment, writeBatch, runTransaction,
@@ -31,9 +30,8 @@
   if (emu) {
     connectAuthEmulator(auth, `http://${emu}:9099`, { disableWarnings: true });
     connectFirestoreEmulator(db, emu, 8080);
-  } else if (/^https?:$/.test(location.protocol)) {
-    analyticsSupported().then((ok) => ok && getAnalytics(app)).catch(() => {});
   }
+  // Аналитика (Google Analytics) намеренно не подключена: приложению она не нужна
 
   const LEGACY_DOMAIN = 'xitter.app'; // старые аккаунты: username@xitter.app
   const ONLINE_WINDOW = 75e3;
@@ -550,15 +548,29 @@
       case 'call:decline':
         updateDoc(ref, { status: 'declined' }).catch(fail);
         unwatchCall(d.callId);
+        wipeCall(d.callId);
         break;
       case 'call:busy':
         updateDoc(ref, { status: 'busy' }).catch(fail);
+        wipeCall(d.callId);
         break;
       case 'call:end':
         updateDoc(ref, { status: 'ended', endedBy: me }).catch(fail);
         unwatchCall(d.callId);
+        wipeCall(d.callId);
         break;
     }
+  }
+
+  // После звонка удаляем его техническую часть: SDP и ICE-кандидаты содержат IP-адреса устройств
+  function wipeCall(callId) {
+    setTimeout(async () => {
+      try {
+        const snap = await getDocs(collection(db, 'calls', callId, 'candidates'));
+        await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+        await updateDoc(doc(db, 'calls', callId), { offer: deleteField(), answer: deleteField() });
+      } catch {}
+    }, 4000);
   }
 
   // ---------- файлы: части по ~1 МБ в Firestore ----------
@@ -716,6 +728,146 @@
   const getConfig = wrap(async (key) => { const d = await getDoc(doc(db, 'config', key)); return d.exists() ? d.data() : null; });
   const setConfig = wrap(async (key, data) => { await setDoc(doc(db, 'config', key), data); });
 
+  // ---------- удаление сообщений и данных ----------
+  // своё сообщение удаляется у всех; если оно было последним, в списке чатов показываем предыдущее
+  const deleteMessage = wrap(async (chatId, msgId) => {
+    const c = rawChats.get(chatId);
+    const mref = doc(db, 'chats', chatId, 'messages', msgId);
+    const m = await getDoc(mref);
+    if (!m.exists() || m.data().from !== me) throw new Error('Можно удалить только своё сообщение');
+    await deleteDoc(mref);
+    if (m.data().file && m.data().file.id) deleteFile(m.data().file.id).catch(() => {});
+    if (c && c.lastMessage && c.lastMessage.ts === m.data().ts) {
+      const last = await getDocs(query(collection(db, 'chats', chatId, 'messages'), orderBy('ts'), limitToLast(1)));
+      const l = last.docs[0] && last.docs[0].data();
+      await updateDoc(doc(db, 'chats', chatId), { lastMessage: l ? { text: l.text, from: l.from, ts: l.ts } : deleteField() }).catch(() => {});
+    }
+  });
+  async function deleteFile(id) {
+    const chunks = await getDocs(collection(db, 'files', id, 'chunks'));
+    await deleteAll(chunks.docs.map((d) => d.ref));
+    await deleteDoc(doc(db, 'files', id));
+  }
+  async function deleteAll(refs, onStep) {
+    for (let i = 0; i < refs.length; i += 400) {
+      const b = writeBatch(db);
+      refs.slice(i, i + 400).forEach((r) => b.delete(r));
+      await b.commit();
+      onStep && onStep();
+    }
+  }
+  const dataOf = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  // все мои данные в одном JSON (то, что хранится о пользователе)
+  const exportMyData = wrap(async () => {
+    const [u, st, posts, gotGifts, sentGifts, nfts, actTo, actFrom, files, callsFrom, callsTo] = await Promise.all([
+      getDoc(doc(db, 'users', me)), getDoc(doc(db, 'status', me)),
+      getDocs(query(collection(db, 'posts'), where('author', '==', me))),
+      getDocs(query(collection(db, 'gifts'), where('to', '==', me))), getDocs(query(collection(db, 'gifts'), where('from', '==', me))),
+      getDocs(query(collection(db, 'nfts'), where('owner', '==', me))),
+      getDocs(query(collection(db, 'activity'), where('to', '==', me))), getDocs(query(collection(db, 'activity'), where('from', '==', me))),
+      getDocs(query(collection(db, 'files'), where('owner', '==', me))),
+      getDocs(query(collection(db, 'calls'), where('from', '==', me))), getDocs(query(collection(db, 'calls'), where('to', '==', me))),
+    ]);
+    const messages = [];
+    for (const c of rawChats.values()) {
+      const ms = await getDocs(query(collection(db, 'chats', c.id, 'messages'), where('from', '==', me)));
+      ms.docs.forEach((d) => messages.push({ chatId: c.id, id: d.id, ...d.data() }));
+    }
+    const comments = [];
+    const allPosts = await getDocs(collection(db, 'posts'));
+    for (const p of allPosts.docs) {
+      if (!p.data().commentCount) continue;
+      const cs = await getDocs(query(collection(db, 'posts', p.id, 'comments'), where('author', '==', me)));
+      cs.docs.forEach((d) => comments.push({ postId: p.id, id: d.id, ...d.data() }));
+    }
+    const clean = (x) => JSON.parse(JSON.stringify(x, (k, v) => (v && typeof v.toMillis === 'function' ? v.toMillis() : v)));
+    return clean({
+      exportedAt: new Date().toISOString(),
+      account: { uid: me, email: (auth.currentUser && auth.currentUser.email) || null },
+      profile: u.exists() ? u.data() : null, status: st.exists() ? st.data() : null,
+      posts: dataOf(posts), comments, messages,
+      chats: [...rawChats.values()].map((c) => ({ id: c.id, type: c.type, title: c.title || null, members: c.members })),
+      giftsReceived: dataOf(gotGifts), giftsSent: dataOf(sentGifts), nfts: dataOf(nfts),
+      activity: [...dataOf(actTo), ...dataOf(actFrom)],
+      files: dataOf(files), calls: [...dataOf(callsFrom), ...dataOf(callsTo)],
+    });
+  });
+
+  // удаляет посты, комментарии, лайки, сообщения, файлы, уведомления и звонки; с account = true — ещё и аккаунт
+  const deleteMyData = wrap(async ({ account = false, onProgress } = {}) => {
+    const step = (t) => onProgress && onProgress(t);
+    if (account) {
+      const t = auth.currentUser && Date.parse(auth.currentUser.metadata.lastSignInTime || '');
+      if (!emu && (!t || Date.now() - t > 4 * 60e3)) {
+        throw Object.assign(new Error('Для удаления аккаунта нужен свежий вход: выйдите, войдите снова и сразу повторите'), { code: 'relogin' });
+      }
+    }
+    step('Сообщения');
+    for (const c of rawChats.values()) {
+      const ms = await getDocs(query(collection(db, 'chats', c.id, 'messages'), where('from', '==', me)));
+      await deleteAll(ms.docs.map((d) => d.ref));
+      if (c.lastMessage && c.lastMessage.from === me) await updateDoc(doc(db, 'chats', c.id), { lastMessage: deleteField() }).catch(() => {});
+    }
+    step('Комментарии и лайки');
+    const allPosts = await getDocs(collection(db, 'posts'));
+    for (const p of allPosts.docs) {
+      const d = p.data();
+      if (d.author === me) {
+        const cs = await getDocs(collection(db, 'posts', p.id, 'comments'));
+        await deleteAll(cs.docs.map((x) => x.ref));
+        continue;
+      }
+      if (d.commentCount) {
+        const cs = await getDocs(query(collection(db, 'posts', p.id, 'comments'), where('author', '==', me)));
+        if (cs.size) {
+          await deleteAll(cs.docs.map((x) => x.ref));
+          await updateDoc(p.ref, { commentCount: increment(-cs.size) }).catch(() => {});
+        }
+      }
+      if ((d.likes || []).includes(me)) await updateDoc(p.ref, { likes: arrayRemove(me) }).catch(() => {});
+    }
+    step('Посты');
+    await deleteAll(allPosts.docs.filter((p) => p.data().author === me).map((p) => p.ref));
+    step('Файлы');
+    // файлы профиля (баннер, аватар, музыка) остаются, пока есть аккаунт; картинки коллекций NFT не трогаем
+    const keep = new Set([...collections.values()].map((c) => c.image && c.image.id).filter(Boolean));
+    if (!account) {
+      const u = users.get(me) || {}, sty = u.style || {};
+      [sty.banner, sty.avatarMedia, u.music].forEach((x) => x && x.id && keep.add(x.id));
+    }
+    const files = await getDocs(query(collection(db, 'files'), where('owner', '==', me)));
+    for (const f of files.docs) if (!keep.has(f.id)) await deleteFile(f.id).catch(() => {});
+    step('Уведомления и звонки');
+    const [actTo, actFrom, callsFrom, callsTo] = await Promise.all([
+      getDocs(query(collection(db, 'activity'), where('to', '==', me))), getDocs(query(collection(db, 'activity'), where('from', '==', me))),
+      getDocs(query(collection(db, 'calls'), where('from', '==', me))), getDocs(query(collection(db, 'calls'), where('to', '==', me))),
+    ]);
+    await deleteAll([...actTo.docs, ...actFrom.docs].map((d) => d.ref));
+    for (const cl of [...callsFrom.docs, ...callsTo.docs]) {
+      const cands = await getDocs(collection(db, 'calls', cl.id, 'candidates'));
+      await deleteAll([...cands.docs.map((d) => d.ref), cl.ref]);
+    }
+    if (!account) return;
+
+    step('Подарки и NFT');
+    const [gifts, nfts] = await Promise.all([getDocs(query(collection(db, 'gifts'), where('to', '==', me))), getDocs(query(collection(db, 'nfts'), where('owner', '==', me)))]);
+    await deleteAll([...gifts.docs, ...nfts.docs].map((d) => d.ref));
+    step('Чаты');
+    for (const c of rawChats.values()) {
+      await updateDoc(doc(db, 'chats', c.id), { members: arrayRemove(me), [`unread.${me}`]: deleteField(), [`lastRead.${me}`]: deleteField(), [`typing.${me}`]: deleteField() }).catch(() => {});
+    }
+    step('Профиль');
+    const u = users.get(me) || {};
+    const st = statuses.get(me) || {};
+    const names = [u.username, ...(st.usernames || [])].filter(Boolean);
+    const user = auth.currentUser;
+    stopAll();
+    await deleteAll([...names.map((n) => doc(db, 'usernames', n)), doc(db, 'status', me), doc(db, 'users', me)]);
+    step('Аккаунт');
+    await deleteUser(user);
+  });
+
   // подарки и NFT пользователя
   const userGifts = wrap(async (uid) => {
     const [g, n] = await Promise.all([
@@ -817,6 +969,7 @@
     createPost, deletePost, toggleLike, subscribeComments, addComment,
     openDM, createGroup, subscribeMessages, send, markRead, typing, signal,
     uploadFile, fileURL, buyUsername,
+    deleteMessage, exportMyData, deleteMyData,
     GIFTS, sendGift, sellGift, giftSellValue, getConfig, setConfig, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
     mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
     USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT,

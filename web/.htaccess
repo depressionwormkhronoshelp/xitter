@@ -1,0 +1,6 @@
+# Xitter: браузер каждый раз проверяет, не вышла ли новая версия страницы, стилей и скриптов
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|css|js|webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

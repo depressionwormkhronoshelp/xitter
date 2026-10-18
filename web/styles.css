@@ -1059,3 +1059,27 @@ button.tg-row:active { background: var(--fill-2); }
 .turn-box .buy-row .field { flex: 1; min-width: 0; }
 .turn-box .input { background: var(--bg); }
 .gift-art.hero { font-size: 110px; filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.2)); }
+
+/* ---------- документы, cookie, данные ---------- */
+.group-title { margin: 6px 4px -4px; font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.4px; }
+.danger-row > span:first-child { color: #ff3b30; }
+#legalSheet iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+.cookie-banner {
+  position: fixed; z-index: 90; left: 12px; right: 12px; bottom: calc(12px + var(--safe-b)); max-width: 560px; margin: 0 auto;
+  display: grid; gap: 10px; padding: 14px 16px; border-radius: 18px; background: var(--bg); color: var(--text);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25), 0 0 0 0.5px var(--sep); animation: rise 0.4s var(--ease-out);
+}
+.cookie-banner p { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--text-2); }
+.cookie-banner p b { display: block; color: var(--text); font-size: 15px; margin-bottom: 2px; }
+.cookie-banner a { color: var(--text); font-weight: 600; }
+.cookie-btns { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.cookie-btns button { flex: 1; min-width: 150px; height: 38px; }
+
+/* фокус с клавиатуры виден, мышью — нет */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--link, #2f86e8); outline-offset: 2px; border-radius: 8px; }
+.msg:focus-visible { outline-offset: -2px; border-radius: 18px; }
+li.row:focus-visible, .nft-card:focus-visible { outline-offset: -2px; }
+.sheet-body > * { flex-shrink: 0; }
+.input:focus-visible, input:focus-visible, textarea:focus-visible { outline: none; }
+.market-note { margin: 0; padding: 0 16px calc(24px + var(--safe-b)); text-align: center; }
