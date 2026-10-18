@@ -5,7 +5,7 @@ if ! command -v node >/dev/null 2>&1; then
   echo "Не найден Node.js. Установите его: https://nodejs.org (или sudo apt install nodejs)"
   exit 1
 fi
-if [ ! -d node_modules/ws ]; then
+if [ ! -d node_modules/selfsigned ]; then
   if command -v npm >/dev/null 2>&1; then
     npm install
   else

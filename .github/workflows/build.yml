@@ -82,7 +82,7 @@ jobs:
         run: |
           cd server && npm install --omit=dev && cd ..
           mkdir -p dist/Xitter-server
-          cp -r server web start-server.sh start-server.command start-server.bat README.md dist/Xitter-server/
+          cp -r server web start-server.sh start-ngrok.sh start-server.command start-server.bat README.md dist/Xitter-server/
           rm -rf dist/Xitter-server/server/data
           (cd dist && zip -qr Xitter-server.zip Xitter-server)
       - uses: actions/upload-artifact@v5

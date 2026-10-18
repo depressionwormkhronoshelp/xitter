@@ -53,6 +53,23 @@ Apple не даёт поставить приложение без подпис�
 
 Нужен Node.js 22+. Распакуйте `Xitter-server.zip` и запустите `start-server.sh` (Linux/macOS) или `start-server.bat` (Windows). Веб-версия откроется на `http://localhost:3000`, а для звонков с других устройств в сети на `https://АДРЕС:3443`. Браузеры дают доступ к микрофону только по https; сертификат самоподписанный, поэтому нажмите «Дополнительно» → «Перейти».
 
+## Через ngrok (в том числе с телефона в Termux)
+
+`start-ngrok.sh` запускает сервер веб-версии и открывает к нему доступ из интернета по https-ссылке ngrok. По https в браузере работают микрофон и камера, поэтому звонки идут с любого устройства.
+
+В Termux на Android:
+
+```
+pkg install -y unzip curl
+curl -LO https://github.com/depressionwormkhronoshelp/xitter/releases/download/latest/Xitter-server.zip
+unzip -o Xitter-server.zip -d xitter && cd xitter/Xitter-server
+bash start-ngrok.sh
+```
+
+Скрипт сам поставит Node.js и ngrok и при первом запуске попросит authtoken со страницы https://dashboard.ngrok.com/get-started/your-authtoken. Токен хранится только в настройках ngrok на телефоне. Ссылка на сайт появится в строке **Forwarding**. Чтобы адрес не менялся при каждом запуске, возьмите бесплатный домен в панели ngrok (Domains) и запускайте так: `NGROK_DOMAIN=имя.ngrok-free.app bash start-ngrok.sh`.
+
+На Linux тот же скрипт работает без изменений. Пока Termux открыт, сайт доступен; остановить его можно через Ctrl+C.
+
 ## Разработка
 
 ```
