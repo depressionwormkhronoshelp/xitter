@@ -622,3 +622,4 @@ body.as-open .sheet-backdrop { opacity: 1; pointer-events: auto; z-index: 55; }
 .callrow .cb-text b { font-size: 15px; font-weight: 500; }
 .callrow .cb-text small { color: #8e8e93; opacity: 1; }
 .callbubble:active, .callrow:active { opacity: 0.6; }
+.fine a { color: inherit; }
