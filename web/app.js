@@ -325,6 +325,9 @@
 
   // ---------- навигация: стек страниц ----------
   const stack = ['tabsPage'];
+  // на компьютере: боковое меню слева, сообщения в две колонки
+  const desktop = matchMedia('(min-width: 900px)');
+  const syncSide = () => $('#sideChats').classList.toggle('active', stack.includes('chatsPage'));
   const isOpen = (id) => stack.includes(id);
   function push(id) {
     if (stack.includes(id)) { while (stack[stack.length - 1] !== id) pop(true); return; }
@@ -336,6 +339,7 @@
     void page.offsetWidth;
     page.classList.add('open');
     stack.push(id);
+    syncSide();
     haptic(6);
   }
   function pop(silent) {
@@ -346,6 +350,7 @@
     page.classList.add('pushed');
     $('#' + stack[stack.length - 1]).classList.remove('covered');
     onPagePopped(id);
+    syncSide();
     if (!silent) haptic(5);
     return true;
   }
@@ -409,7 +414,7 @@
     if (name === 'activity') renderActivity(true);
     if (!quiet) haptic(5);
   }
-  $$('#tabbar button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+  $$('#tabbar button[data-tab]').forEach((b) => b.addEventListener('click', () => { if (desktop.matches && b.dataset.tab !== 'compose') resetStack(); switchTab(b.dataset.tab); }));
 
   // ---------- посты ----------
   const HEART = '<svg><use href="#i-heart"/></svg>';
@@ -1018,11 +1023,15 @@
     const badge = $('#dmBadge');
     badge.hidden = !total;
     badge.textContent = total > 99 ? '99+' : total;
+    const side = $('#sideDmBadge');
+    side.hidden = !total;
+    side.textContent = badge.textContent;
   }
   $('#chatList').addEventListener('click', (e) => { const row = e.target.closest('.row'); if (row) openChat(row.dataset.id); });
   $('#chatSearch').addEventListener('input', () => renderChats(false));
   function openChats() { renderChats(true); push('chatsPage'); }
   $('#openChats').addEventListener('click', openChats);
+  $('#sideChats').addEventListener('click', () => { resetStack(); openChats(); });
 
   async function messageUser(uid) {
     try {
@@ -1036,6 +1045,8 @@
   function openChat(id) {
     const chat = S.chats.get(id);
     if (!chat) return;
+    // на компьютере список чатов всегда остаётся колонкой слева от переписки
+    if (desktop.matches && !isOpen('chatsPage')) { resetStack(); openChats(); }
     if (S.msgUnsub && S.current !== id) { S.msgUnsub(); S.msgUnsub = null; }
     S.current = id;
     $('#emojiPop').hidden = true;

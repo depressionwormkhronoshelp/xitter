@@ -147,11 +147,13 @@
           </div>
 
           <nav class="tabbar" id="tabbar">
-            <button data-tab="feed" class="active" aria-label="Лента"><svg><use href="#i-home"/></svg></button>
-            <button data-tab="search" aria-label="Поиск"><svg><use href="#i-search"/></svg></button>
-            <button data-tab="compose" aria-label="Новый пост"><svg><use href="#i-plus"/></svg></button>
-            <button data-tab="activity" aria-label="Активность"><svg><use href="#i-bell"/></svg><i class="badge" id="actBadge" hidden></i></button>
-            <button data-tab="me" aria-label="Профиль"><span class="tab-avatar" id="tabAvatar"></span></button>
+            <b class="side-logo">Xitter</b>
+            <button data-tab="feed" class="active" aria-label="Лента"><svg><use href="#i-home"/></svg><span>Лента</span></button>
+            <button data-tab="search" aria-label="Поиск"><svg><use href="#i-search"/></svg><span>Поиск</span></button>
+            <button data-tab="compose" aria-label="Новый пост"><svg><use href="#i-plus"/></svg><span>Новый пост</span></button>
+            <button data-tab="activity" aria-label="Активность"><svg><use href="#i-bell"/></svg><span>Активность</span><i class="badge" id="actBadge" hidden></i></button>
+            <button class="side-only" id="sideChats" aria-label="Сообщения"><svg><use href="#i-send"/></svg><span>Сообщения</span><i class="badge" id="sideDmBadge" hidden></i></button>
+            <button data-tab="me" aria-label="Профиль"><span class="tab-avatar" id="tabAvatar"></span><span>Профиль</span></button>
           </nav>
         </div>
 

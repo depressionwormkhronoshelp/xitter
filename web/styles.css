@@ -63,14 +63,15 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 [hidden] { display: none !important; }
 b { font-weight: 600; }
 
-/* на компьютере приложение — колонка шириной с телефон */
+/* на планшете — колонка шириной с телефон, на компьютере — весь экран (см. конец файла) */
 #app {
   position: relative; height: 100%; max-width: 480px; margin: 0 auto; overflow: hidden;
   background: var(--bg);
 }
-@media (min-width: 560px) {
+@media (min-width: 560px) and (max-width: 899px) {
   #app { box-shadow: 0 0 0 0.5px var(--sep), 0 20px 80px rgba(0, 0, 0, 0.08); }
 }
+.side-logo, .tabbar .side-only, .tabbar button > span:not(.tab-avatar) { display: none; }
 .screen { position: absolute; inset: 0; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(18px); } }
@@ -623,3 +624,71 @@ body.as-open .sheet-backdrop { opacity: 1; pointer-events: auto; z-index: 55; }
 .callrow .cb-text small { color: #8e8e93; opacity: 1; }
 .callbubble:active, .callrow:active { opacity: 0.6; }
 .fine a { color: inherit; }
+
+/* ---------- компьютер: весь экран, меню слева ---------- */
+@media (min-width: 900px) {
+  :root { --side: 248px; --col: 640px; --list: 380px; }
+  #app { max-width: none; }
+
+  /* боковое меню вместо нижней панели */
+  .tabbar {
+    top: 0; right: auto; width: var(--side); height: auto; padding: 18px 12px; z-index: 30;
+    flex-direction: column; justify-content: flex-start; align-items: stretch; gap: 4px;
+    background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: 0.5px 0 0 var(--sep);
+  }
+  .side-logo { display: block; font-size: 28px; font-weight: 800; letter-spacing: -0.8px; padding: 4px 14px 20px; }
+  .tabbar .side-only { display: flex; }
+  .tabbar button {
+    width: auto; height: 50px; padding: 0 14px; border-radius: 14px; display: flex; align-items: center; gap: 16px;
+    justify-content: flex-start; font-size: 17px; font-weight: 500;
+  }
+  .tabbar button > span:not(.tab-avatar) { display: inline; }
+  .tabbar button:hover { background: var(--fill); }
+  .tabbar button:active { transform: scale(0.97); }
+  .tabbar button.active { font-weight: 700; }
+  .tabbar button[data-tab="me"] { margin-top: auto; }
+  .tabbar .badge { top: 8px; right: auto; left: 32px; }
+  .tabbar button[data-tab="compose"] { background: var(--ink); color: var(--on-ink); margin: 6px 0; }
+  .tabbar button[data-tab="compose"]:hover { opacity: 0.88; }
+
+  /* вкладки и страницы — справа от меню, содержимое по центру */
+  .tab { left: var(--side); bottom: 0; }
+  .page:not(#tabsPage) { left: var(--side); }
+  .tab, #userPage, #postPage { padding: 0 max(0px, calc((100vw - var(--side) - var(--col)) / 2)); }
+  .tab > .scroller, #userPage > .scroller, #postPage > .scroller { box-shadow: 0.5px 0 0 var(--sep), -0.5px 0 0 var(--sep); }
+  .page.pushed { transform: translateX(28px); opacity: 0; transition: transform 0.35s var(--spring), opacity 0.2s, visibility 0s 0.35s; }
+  .page.open { transform: none; opacity: 1; box-shadow: none; transition: transform 0.35s var(--spring), opacity 0.2s, visibility 0s; }
+  .page.covered { transform: none; filter: none; }
+  .feed-bar #openChats { display: none; }
+
+  /* сообщения в две колонки: список слева, переписка справа */
+  #chatsPage > * { width: var(--list); }
+  #chatsPage { box-shadow: none; }
+  #chatsPage::after {
+    content: "Выберите чат, чтобы начать переписку"; position: absolute; top: 0; bottom: 0; left: var(--list); right: 0;
+    display: grid; place-items: center; color: var(--text-2); font-size: 15px; box-shadow: -0.5px 0 0 var(--sep);
+  }
+  #chatsPage > .bar [data-pop] { visibility: hidden; }
+  .page#chatPage { left: calc(var(--side) + var(--list)); box-shadow: -0.5px 0 0 var(--sep); }
+  #chatPage.pushed { transform: none; }
+  #chatPage .chat-bar > [data-pop] { visibility: hidden; }
+  #chatsPage.covered { transform: none; }
+  .bubble { max-width: min(70%, 520px); }
+  .toast { left: calc(50% + var(--side) / 2); }
+
+  /* шторки — окна по центру экрана */
+  body.sheet-open #main { transform: none; border-radius: 0; filter: none; }
+  .sheet {
+    left: 50%; right: auto; bottom: auto; top: 50%; width: min(560px, calc(100% - 48px)); height: min(720px, calc(100% - 80px));
+    border-radius: 18px; opacity: 0; pointer-events: none; box-shadow: 0 30px 90px rgba(0, 0, 0, 0.25);
+    transform: translate(-50%, -46%) scale(0.97); transition: transform 0.35s var(--spring), opacity 0.2s;
+  }
+  .sheet.short { height: auto; max-height: calc(100% - 80px); }
+  .sheet.open { transform: translate(-50%, -50%); opacity: 1; pointer-events: auto; }
+  .sheet .grabber { visibility: hidden; }
+  .sheet-body { padding-bottom: 20px; }
+  .action-sheet { left: 50%; right: auto; width: 380px; margin-left: -190px; bottom: 32px; }
+
+  /* вход — карточка по центру */
+  .auth-wrap { max-width: 440px; margin: 0 auto; }
+}
