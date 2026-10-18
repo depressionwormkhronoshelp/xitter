@@ -1256,10 +1256,10 @@
   onChip('#ringChips', 'ring');
   onChip('#fontChips', 'font');
   $('#ringChips').addEventListener('input', (e) => { if (e.target.id === 'ringColor') { editStyle.ringColor = e.target.value; renderEditAvatar(); } });
-  async function uploadPicked(file, btn) {
+  async function uploadPicked(file, btn, opts) {
     const label = btn ? btn.textContent : '';
     try {
-      return await B.uploadFile(file, (p) => { if (btn) btn.textContent = `Загрузка ${Math.round(p * 100)}%`; });
+      return await B.uploadFile(file, (p) => { if (btn) btn.textContent = `Загрузка ${Math.round(p * 100)}%`; }, opts);
     } finally { if (btn) btn.textContent = label; }
   }
   $('#editSheet').addEventListener('click', async (e) => {
@@ -1281,7 +1281,7 @@
     if (k === 'banner' && !/^image\//.test(f.type)) { toast('Нужно фото или GIF'); return; }
     if (k === 'music' && !/^audio\//.test(f.type)) { toast('Нужен аудиофайл'); return; }
     try {
-      const up = await uploadPicked(k === 'avatar' && /^video\//.test(f.type) ? await shrinkVideo(f) : f, ed);
+      const up = await uploadPicked(k === 'avatar' && /^video\//.test(f.type) ? await shrinkVideo(f) : f, ed, { keep: true });
       if (k === 'music') { editMusic = { id: up.id, title: f.name.replace(/\.[^.]+$/, '').slice(0, 80), size: up.size }; musicChanged = true; }
       else if (k === 'banner') editStyle.banner = { id: up.id, type: up.type };
       else editStyle.avatarMedia = { id: up.id, type: up.type };
@@ -1821,7 +1821,7 @@
     const f = await anyFile('image/*');
     if (!f) return;
     if (!/^image\//.test(f.type)) { toast('Нужна картинка'); return; }
-    try { const up = await uploadPicked(f, e.currentTarget); NC.image = { id: up.id, type: up.type }; renderNftCreator(); } catch (err) { toast(err.message); }
+    try { const up = await uploadPicked(f, e.currentTarget, { keep: true }); NC.image = { id: up.id, type: up.type }; renderNftCreator(); } catch (err) { toast(err.message); }
   });
   $('#nftCreateBtn').addEventListener('click', async (e) => {
     try {

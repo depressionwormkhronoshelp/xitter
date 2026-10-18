@@ -17,7 +17,7 @@
     GoogleAuthProvider, OAuthProvider, signInWithPopup,
     initializeFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, deleteField,
     collection, query, where, orderBy, limit, limitToLast, onSnapshot, increment, writeBatch, runTransaction,
-    arrayUnion, arrayRemove, serverTimestamp, getCountFromServer,
+    arrayUnion, arrayRemove, serverTimestamp, getCountFromServer, Timestamp,
   } = window.FB;
 
   const app = initializeApp(firebaseConfig);
@@ -587,8 +587,11 @@
     return btoa(bin);
   };
   const fileLimit = () => (plusActive(statuses.get(me)) ? PLUS_FILE_LIMIT : FILE_LIMIT);
+  // Вложения (чаты, посты) живут неделю: поле expireAt удаляет их TTL-политика Firestore.
+  // Оформление профиля и картинки NFT загружаются с keep: true и не удаляются.
+  const FILE_TTL_DAYS = 7;
   // onProgress(0..1); возвращает { id, name, size, type }
-  const uploadFile = wrap(async (file, onProgress) => {
+  const uploadFile = wrap(async (file, onProgress, { keep = false } = {}) => {
     if (!file) throw new Error('Нет файла');
     const limitBytes = fileLimit();
     if (file.size > limitBytes) {
@@ -597,11 +600,13 @@
     const ref = doc(collection(db, 'files'));
     const parts = Math.max(1, Math.ceil(file.size / CHUNK));
     const meta = { owner: me, name: String(file.name || 'файл').slice(0, 120), size: file.size, type: String(file.type || 'application/octet-stream').slice(0, 80), chunks: parts, createdAt: Date.now() };
+    const expireAt = keep ? null : Timestamp.fromMillis(Date.now() + FILE_TTL_DAYS * 864e5);
+    if (expireAt) meta.expireAt = expireAt;
     await setDoc(ref, meta);
     let done = 0;
     const one = async (i) => {
       const buf = await file.slice(i * CHUNK, (i + 1) * CHUNK).arrayBuffer();
-      await setDoc(doc(db, 'files', ref.id, 'chunks', String(i).padStart(4, '0')), { d: toB64(buf) });
+      await setDoc(doc(db, 'files', ref.id, 'chunks', String(i).padStart(4, '0')), expireAt ? { d: toB64(buf), expireAt } : { d: toB64(buf) });
       done++;
       onProgress && onProgress(done / parts);
     };
@@ -616,7 +621,7 @@
     if (!fileCache.has(id)) {
       const p = (async () => {
         const m = await getDoc(doc(db, 'files', id));
-        if (!m.exists()) throw new Error('Файл не найден');
+        if (!m.exists()) throw new Error(`Файл удалён: вложения хранятся ${FILE_TTL_DAYS} дней`);
         const meta = m.data();
         const snap = await getDocs(collection(db, 'files', id, 'chunks'));
         if (snap.size < meta.chunks) throw new Error('Файл ещё загружается');
@@ -981,7 +986,7 @@
     deleteMessage, exportMyData, deleteMyData,
     GIFTS, sendGift, sellGift, giftSellValue, getConfig, setConfig, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
     mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
-    USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT,
+    USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT, FILE_TTL_DAYS,
     get uid() { return me; },
     get isAdmin() { return amAdmin || isOwner(); },
     get isOwner() { return isOwner(); },
