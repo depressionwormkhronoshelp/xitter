@@ -1281,13 +1281,62 @@
     if (k === 'banner' && !/^image\//.test(f.type)) { toast('Нужно фото или GIF'); return; }
     if (k === 'music' && !/^audio\//.test(f.type)) { toast('Нужен аудиофайл'); return; }
     try {
-      const up = await uploadPicked(f, ed);
+      const up = await uploadPicked(k === 'avatar' && /^video\//.test(f.type) ? await shrinkVideo(f) : f, ed);
       if (k === 'music') { editMusic = { id: up.id, title: f.name.replace(/\.[^.]+$/, '').slice(0, 80), size: up.size }; musicChanged = true; }
       else if (k === 'banner') editStyle.banner = { id: up.id, type: up.type };
       else editStyle.avatarMedia = { id: up.id, type: up.type };
       renderPlusEdit(); renderEditAvatar();
     } catch (err) { toast(err.message); }
   });
+
+  // видео для аватарки: квадрат 320px, без звука, до 10 секунд, низкий битрейт.
+  // Перекодируется прямо в браузере (canvas + MediaRecorder), поэтому занимает столько же времени, сколько длится ролик
+  const AVATAR_SIDE = 320, AVATAR_MAX_SEC = 10;
+  async function shrinkVideo(file) {
+    const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4']
+      .find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+    const canvas = document.createElement('canvas');
+    if (!mime || !canvas.captureStream) return file; // старый браузер: как есть, аватарки всё равно играют без звука
+    const src = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.src = src;
+    try {
+      await new Promise((ok, fail) => { v.onloadedmetadata = ok; v.onerror = () => fail(new Error('Не получилось открыть видео')); });
+      canvas.width = canvas.height = AVATAR_SIDE;
+      const g = canvas.getContext('2d');
+      const side = Math.min(v.videoWidth, v.videoHeight);
+      const sx = (v.videoWidth - side) / 2, sy = (v.videoHeight - side) / 2;
+      const draw = () => g.drawImage(v, sx, sy, side, side, 0, 0, AVATAR_SIDE, AVATAR_SIDE);
+      const stream = canvas.captureStream(24); // только картинка, звуковой дорожки нет
+      const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 400e3 });
+      const parts = [];
+      rec.ondataavailable = (e) => e.data.size && parts.push(e.data);
+      const done = new Promise((ok) => { rec.onstop = ok; });
+      const limit = Math.min(v.duration || AVATAR_MAX_SEC, AVATAR_MAX_SEC);
+      await v.play();
+      draw();
+      rec.start(500);
+      await new Promise((ok) => {
+        const tick = () => {
+          draw();
+          toast(`Сжимаю видео… ${Math.min(99, Math.round((v.currentTime / limit) * 100))}%`);
+          if (v.ended || v.currentTime >= limit) return ok();
+          v.requestVideoFrameCallback ? v.requestVideoFrameCallback(tick) : requestAnimationFrame(tick);
+        };
+        tick();
+        v.onended = ok;
+      });
+      v.pause();
+      rec.stop();
+      await done;
+      $('#toast').classList.remove('show');
+      const type = mime.split(';')[0];
+      const out = new File(parts, `${file.name.replace(/\.[^.]+$/, '') || 'avatar'}.${type === 'video/mp4' ? 'mp4' : 'webm'}`, { type });
+      return out.size ? out : file;
+    } finally {
+      URL.revokeObjectURL(src);
+    }
+  }
 
   // музыка профиля: один плеер
   const profileMusic = { audio: new Audio(), id: null, playing: false };
