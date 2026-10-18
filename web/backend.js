@@ -676,6 +676,118 @@
     else await deleteDoc(doc(db, 'admins', uid));
   });
 
+  // ---------- подарки и NFT ----------
+  const GIFTS = { heart: 15, bear: 15, gift: 25, rose: 25, cake: 50, bouquet: 50, rocket: 50, champagne: 50, trophy: 100, ring: 100, diamond: 100 };
+  const myLune = (s) => (s.exists() ? s.data().lune || 0 : 0);
+
+  const sendGift = wrap(async (to, type, text) => {
+    const price = GIFTS[type];
+    if (!price || !to || to === me) throw new Error('Нельзя отправить этот подарок');
+    const gref = doc(collection(db, 'gifts'));
+    await runTransaction(db, async (t) => {
+      const sref = doc(db, 'status', me);
+      const s = await t.get(sref);
+      if (myLune(s) < price) throw new Error(`Нужно ${price} LUNE`);
+      t.set(gref, { from: me, to, type, price, text: String(text || '').trim().slice(0, 120), createdAt: Date.now() });
+      t.update(sref, { lune: myLune(s) - price, spend: { k: 'gift', id: gref.id } });
+    });
+    addActivity(to, { type: 'gift', gift: type });
+    return gref.id;
+  });
+
+  // подарки и NFT пользователя
+  const userGifts = wrap(async (uid) => {
+    const [g, n] = await Promise.all([
+      getDocs(query(collection(db, 'gifts'), where('to', '==', uid))),
+      getDocs(query(collection(db, 'nfts'), where('owner', '==', uid))),
+    ]);
+    const gifts = g.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => !x.hidden).sort((a, b) => b.createdAt - a.createdAt);
+    gifts.forEach((x) => watchUser(x.from));
+    return { gifts, nfts: n.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => b.mintedAt - a.mintedAt) };
+  });
+
+  const collections = new Map();
+  const listCollections = wrap(async () => {
+    const snap = await getDocs(collection(db, 'nftCollections'));
+    snap.forEach((d) => collections.set(d.id, { id: d.id, ...d.data() }));
+    return [...collections.values()].sort((a, b) => b.createdAt - a.createdAt);
+  });
+  const collection_ = (cid) => collections.get(cid) || null;
+
+  const createCollection = wrap(async (c) => {
+    const name = String(c.name || '').trim().slice(0, 40);
+    if (!name) throw new Error('Введите название');
+    const price = Math.round(+c.price || 0), supply = Math.round(+c.supply || 0);
+    if (price < 1) throw new Error('Цена от 1 LUNE');
+    if (supply < 1 || supply > 1000000) throw new Error('Тираж от 1 до 1 000 000');
+    if (!c.backdrops || !c.backdrops.length) throw new Error('Выберите хотя бы один фон');
+    const ref = doc(collection(db, 'nftCollections'));
+    const data = { name, emoji: String(c.emoji || '').slice(0, 16), image: c.image || null, description: String(c.description || '').slice(0, 200), price, supply, minted: 0, backdrops: c.backdrops.slice(0, 12), active: true, createdBy: me, createdAt: Date.now() };
+    await setDoc(ref, data);
+    collections.set(ref.id, { id: ref.id, ...data });
+    return ref.id;
+  });
+  const setCollectionActive = wrap(async (cid, active) => { await updateDoc(doc(db, 'nftCollections', cid), { active: !!active }); });
+
+  const mintNFT = wrap(async (cid) => {
+    let nid = null;
+    await runTransaction(db, async (t) => {
+      const cref = doc(db, 'nftCollections', cid), sref = doc(db, 'status', me);
+      const [c, s] = await Promise.all([t.get(cref), t.get(sref)]);
+      if (!c.exists()) throw new Error('Коллекция не найдена');
+      const col = c.data();
+      if (col.active === false) throw new Error('Продажи остановлены');
+      if (col.minted >= col.supply) throw new Error('Все экземпляры раскуплены');
+      if (myLune(s) < col.price) throw new Error(`Нужно ${col.price} LUNE`);
+      const num = col.minted + 1;
+      nid = `${cid}_${num}`;
+      const backdrop = col.backdrops[Math.floor(Math.random() * col.backdrops.length)];
+      t.update(cref, { minted: num });
+      t.set(doc(db, 'nfts', nid), { cid, num, owner: me, backdrop, salePrice: 0, mintedAt: Date.now() });
+      t.update(sref, { lune: myLune(s) - col.price, spend: { k: 'mint', id: nid } });
+    });
+    return nid;
+  });
+
+  const setSalePrice = wrap(async (nid, price) => {
+    price = Math.max(0, Math.round(+price || 0));
+    await updateDoc(doc(db, 'nfts', nid), { salePrice: price });
+  });
+  const transferNFT = wrap(async (nid, to) => {
+    if (!to || to === me) throw new Error('Выберите получателя');
+    await updateDoc(doc(db, 'nfts', nid), { owner: to, salePrice: 0, prevOwner: me });
+    addActivity(to, { type: 'nft', nft: nid });
+  });
+  const buyNFT = wrap(async (nid) => {
+    await runTransaction(db, async (t) => {
+      const nref = doc(db, 'nfts', nid), sref = doc(db, 'status', me);
+      const [n, s] = await Promise.all([t.get(nref), t.get(sref)]);
+      if (!n.exists()) throw new Error('NFT не найден');
+      const nft = n.data();
+      if (nft.owner === me) throw new Error('Это уже ваш NFT');
+      if (!(nft.salePrice > 0)) throw new Error('NFT больше не продаётся');
+      if (myLune(s) < nft.salePrice) throw new Error(`Нужно ${nft.salePrice} LUNE`);
+      const selRef = doc(db, 'status', nft.owner);
+      const sel = await t.get(selRef);
+      t.update(nref, { owner: me, salePrice: 0, prevOwner: nft.owner });
+      t.update(sref, { lune: myLune(s) - nft.salePrice, spend: { k: 'buy', id: nid } });
+      t.set(selRef, { lune: myLune(sel) + nft.salePrice, sale: nid }, { merge: true });
+    });
+  });
+  const market = wrap(async () => {
+    const snap = await getDocs(query(collection(db, 'nfts'), where('salePrice', '>', 0)));
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    list.forEach((n) => watchUser(n.owner));
+    return list.sort((a, b) => a.salePrice - b.salePrice);
+  });
+  const findUserByName = wrap(async (name) => {
+    name = String(name || '').trim().toLowerCase().replace(/^@/, '');
+    const s = await getDoc(doc(db, 'usernames', name));
+    if (!s.exists()) throw new Error('Пользователь @' + name + ' не найден');
+    watchUser(s.data().uid);
+    return s.data().uid;
+  });
+
   window.XBackend = {
     projectId: firebaseConfig.projectId,
     emulator: !!emu,
@@ -683,7 +795,9 @@
     follow, markActivityRead,
     createPost, deletePost, toggleLike, subscribeComments, addComment,
     openDM, createGroup, subscribeMessages, send, markRead, typing, signal,
-    uploadFile, fileURL, buyUsername, adminStats, adminUsers, adminUpdate, setAdmin,
+    uploadFile, fileURL, buyUsername,
+    GIFTS, sendGift, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
+    mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
     USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT,
     get uid() { return me; },
     get isAdmin() { return amAdmin || isOwner(); },

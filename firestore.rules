@@ -39,7 +39,101 @@ service cloud.firestore {
 
     match /status/{userId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin() || buysUsername(userId);
+      allow create, update: if isAdmin() || buysUsername(userId) || spends(userId) || getsSalePayment(userId);
+    }
+
+    // ---------- траты LUNE: подарок, выпуск NFT, покупка NFT с рук ----------
+    // В той же операции в status пишется spend = { k, id } — что именно куплено
+    function spends(userId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let price = spendPrice(after.spend);
+      return signedIn() && uid() == userId && !isBanned()
+        && after.diff(before).affectedKeys().hasOnly(['lune', 'spend'])
+        && price > 0 && before.get('lune', 0) >= price
+        && after.lune == before.get('lune', 0) - price;
+    }
+    function spendPrice(sp) {
+      return sp.k == 'gift' ? giftCost(sp.id) : sp.k == 'mint' ? mintCost(sp.id) : sp.k == 'buy' ? buyCost(sp.id) : -1;
+    }
+    function giftCost(id) {
+      let g = getAfter(/databases/$(database)/documents/gifts/$(id)).data;
+      return !exists(/databases/$(database)/documents/gifts/$(id)) && g.from == uid() ? g.price : -1;
+    }
+    function mintCost(nid) {
+      let n = getAfter(/databases/$(database)/documents/nfts/$(nid)).data;
+      return !exists(/databases/$(database)/documents/nfts/$(nid)) && n.owner == uid()
+        ? get(/databases/$(database)/documents/nftCollections/$(n.cid)).data.price : -1;
+    }
+    function buyCost(nid) {
+      let n = get(/databases/$(database)/documents/nfts/$(nid)).data;
+      return n.owner != uid() && n.get('salePrice', 0) > 0
+        && getAfter(/databases/$(database)/documents/nfts/$(nid)).data.owner == uid() ? n.salePrice : -1;
+    }
+    // Продавец NFT получает LUNE от покупателя в той же операции
+    function getsSalePayment(userId) {
+      let before = resource == null ? {} : resource.data;
+      let after = request.resource.data;
+      let n = get(/databases/$(database)/documents/nfts/$(after.sale)).data;
+      return signedIn() && uid() != userId
+        && after.diff(before).affectedKeys().hasOnly(['lune', 'sale'])
+        && n.owner == userId && n.get('salePrice', 0) > 0
+        && getAfter(/databases/$(database)/documents/nfts/$(after.sale)).data.owner == uid()
+        && after.lune == before.get('lune', 0) + n.salePrice;
+    }
+
+    // Обычные подарки: цена в LUNE фиксирована
+    function giftPrices() {
+      return { 'heart': 15, 'bear': 15, 'gift': 25, 'rose': 25, 'cake': 50, 'bouquet': 50,
+        'rocket': 50, 'champagne': 50, 'trophy': 100, 'ring': 100, 'diamond': 100 };
+    }
+    match /gifts/{id} {
+      allow read: if signedIn();
+      allow create: if canWrite() && request.resource.data.from == uid()
+        && request.resource.data.to is string && request.resource.data.to != uid()
+        && request.resource.data.type in giftPrices()
+        && request.resource.data.price == giftPrices()[request.resource.data.type]
+        && getAfter(statusPath(uid())).data.spend == { 'k': 'gift', 'id': id };
+      allow update: if signedIn() && resource.data.to == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden']);
+    }
+
+    // NFT-подарки: коллекции создают админы, экземпляры выпускаются по одному за LUNE
+    match /nftCollections/{cid} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || mintsOne(cid);
+    }
+    function mintsOne(cid) {
+      let before = resource.data;
+      let after = request.resource.data;
+      return signedIn() && after.diff(before).affectedKeys().hasOnly(['minted'])
+        && after.minted == before.minted + 1 && after.minted <= before.supply
+        && before.get('active', true) == true
+        && getAfter(/databases/$(database)/documents/nfts/$(cid + '_' + string(after.minted))).data.owner == uid();
+    }
+    match /nfts/{nid} {
+      allow read: if signedIn();
+      allow create: if canWrite() && request.resource.data.owner == uid()
+        && nid == request.resource.data.cid + '_' + string(request.resource.data.num)
+        && get(/databases/$(database)/documents/nftCollections/$(request.resource.data.cid)).data.minted == request.resource.data.num - 1
+        && getAfter(/databases/$(database)/documents/nftCollections/$(request.resource.data.cid)).data.minted == request.resource.data.num
+        && request.resource.data.backdrop in get(/databases/$(database)/documents/nftCollections/$(request.resource.data.cid)).data.backdrops
+        && request.resource.data.salePrice == 0
+        && getAfter(statusPath(uid())).data.spend == { 'k': 'mint', 'id': nid };
+      allow update: if signedIn() && !isBanned()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owner', 'salePrice', 'prevOwner'])
+        && request.resource.data.salePrice is int && request.resource.data.salePrice >= 0
+        && (
+          // владелец: выставить на продажу, снять с продажи или подарить
+          (resource.data.owner == uid()
+            && (request.resource.data.owner == uid() || request.resource.data.salePrice == 0))
+          // покупатель: забирает выставленный NFT и платит продавцу
+          || (resource.data.owner != uid() && resource.data.get('salePrice', 0) > 0
+            && request.resource.data.owner == uid() && request.resource.data.salePrice == 0
+            && getAfter(statusPath(uid())).data.spend == { 'k': 'buy', 'id': nid }
+            && getAfter(statusPath(resource.data.owner)).data.sale == nid)
+        );
     }
 
     // Покупка дополнительного юзернейма: минус 100 LUNE и одно новое имя в списке;

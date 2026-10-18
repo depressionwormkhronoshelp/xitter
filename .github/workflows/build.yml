@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
       - name: Инструменты Android
         run: sudo apt-get update && sudo apt-get install -y aapt zipalign apksigner dalvik-exchange
       - name: Сборка APK
@@ -40,6 +43,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -60,6 +66,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -76,6 +85,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
       - uses: actions/download-artifact@v5
         with:
           name: Xitter-android
@@ -95,6 +107,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -131,6 +146,9 @@ jobs:
       SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
       - name: Деплой (нужен секрет FIREBASE_SERVICE_ACCOUNT)
         if: env.SA != ''
         run: |
@@ -153,6 +171,9 @@ jobs:
       FTP_DIR: ${{ secrets.FTP_DIR || '/www/x.lozhka.fun' }}
     steps:
       - uses: actions/checkout@v5
+      - name: Номер сборки
+        shell: bash
+        run: echo "window.XITTER_BUILD = { run: ${{ github.run_number }}, sha: '${GITHUB_SHA::7}', date: '$(date -u +%Y-%m-%d)' };" > web/version.js
         if: env.FTP_SERVER != ''
       - uses: actions/download-artifact@v5
         if: env.FTP_SERVER != ''
@@ -199,6 +220,6 @@ jobs:
         run: |
           ls -la out
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest out/* --title "Xitter (последняя сборка)" --target "${{ github.sha }}" \
+          gh release create latest out/* --title "Xitter · сборка #${{ github.run_number }}" --target "${{ github.sha }}" \
             --notes "Автосборка из ${{ github.sha }}. Xitter.exe — Windows без установки, Xitter-Setup.exe — установщик для Windows, Xitter.apk — Android, Xitter-unsigned.ipa — iPhone (подписать через Sideloadly/AltStore), Xitter-web.zip — веб-версия, Xitter-server.zip — сервер для своего компьютера." \
             --prerelease

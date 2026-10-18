@@ -3,6 +3,8 @@ package com.xitter.app;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ComponentName;
+import android.content.Intent;
+import android.net.Uri;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -64,6 +66,15 @@ public class MainActivity extends Activity {
 
     /** Мост для веб-интерфейса: смена значка на рабочем столе (Xitter Plus). */
     private class NativeBridge {
+        /** Открыть ссылку в браузере (например, скачать новую версию APK). */
+        @JavascriptInterface
+        public void openUrl(String url) {
+            if (url == null || !url.startsWith("https://")) return;
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try { startActivity(i); } catch (Exception ignored) { }
+        }
+
         @JavascriptInterface
         public void setIcon(String name) {
             boolean known = false;

@@ -43,6 +43,7 @@
       <symbol id="i-sticker" viewBox="0 0 24 24"><path d="M20.5 12.5V7a3.5 3.5 0 0 0-3.5-3.5H7A3.5 3.5 0 0 0 3.5 7v10A3.5 3.5 0 0 0 7 20.5h5.5z"/><path d="M12.5 20.5v-4.5a3.5 3.5 0 0 1 3.5-3.5h4.5"/><path d="M8.5 9.5v.5M14.5 9.5v.5"/></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"/><path d="M8.8 12l2.3 2.3 4.2-4.6"/></symbol>
       <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4.5 4.5v12.5H6z"/><path d="M14 3.5V8h4.5"/></symbol>
+      <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3.5" y="8.5" width="17" height="4" rx="1"/><path d="M5 12.5v8h14v-8M12 8.5v12"/><path d="M12 8.5c-1.5-3.5-5.5-4-5.5-1.5S10 8.5 12 8.5zM12 8.5c1.5-3.5 5.5-4 5.5-1.5S14 8.5 12 8.5z"/></symbol>
       <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
     </defs>
   </svg>
@@ -159,6 +160,8 @@
             <button data-tab="compose" aria-label="Новый пост"><svg><use href="#i-plus"/></svg><span>Новый пост</span></button>
             <button data-tab="activity" aria-label="Активность"><svg><use href="#i-bell"/></svg><span>Активность</span><i class="badge" id="actBadge" hidden></i></button>
             <button class="side-only" id="sideChats" aria-label="Сообщения"><svg><use href="#i-send"/></svg><span>Сообщения</span><i class="badge" id="sideDmBadge" hidden></i></button>
+            <button class="side-only" id="sideMarket" aria-label="Маркет"><svg><use href="#i-gift"/></svg><span>Маркет</span></button>
+            <button class="side-only" id="sideSettings" aria-label="Настройки"><svg><use href="#i-gear"/></svg><span>Настройки</span></button>
             <button data-tab="me" aria-label="Профиль"><span class="tab-avatar" id="tabAvatar"></span><span>Профиль</span></button>
           </nav>
         </div>
@@ -248,7 +251,7 @@
             <b class="bar-title">Админ-панель</b>
             <button class="icon-btn bar-side right" id="adminRefresh" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></svg></button>
           </header>
-          <nav class="seg-text" id="adminSeg"><button data-admin="overview" class="active">Обзор</button><button data-admin="users">Юзеры</button></nav>
+          <nav class="seg-text" id="adminSeg"><button data-admin="overview" class="active">Обзор</button><button data-admin="users">Юзеры</button><button data-admin="nft">NFT</button></nav>
           <div class="scroller" id="adminView">
             <div id="adminOverview">
               <div class="stat-grid" id="adminStats"></div>
@@ -257,7 +260,35 @@
               <label class="search"><svg><use href="#i-search"/></svg><input id="adminSearch" type="search" placeholder="Имя или @username" autocapitalize="none" /></label>
               <ul class="people" id="adminList"></ul>
             </div>
+            <div id="adminNftBox" class="nft-creator" hidden>
+              <h3>Создатель NFT-подарков</h3>
+              <div class="nft-preview" id="nftPreview"></div>
+              <label class="field"><span>Название</span><input class="input" id="nftName" maxlength="40" placeholder="Например, Мороженое" /></label>
+              <div class="field"><span>Картинка: эмодзи или файл (PNG, GIF)</span>
+                <div class="buy-row"><input class="input" id="nftEmoji" maxlength="8" placeholder="🍦" /><button type="button" class="btn-soft small" id="nftImageBtn">Загрузить картинку</button></div>
+              </div>
+              <label class="field"><span>Описание</span><input class="input" id="nftDesc" maxlength="200" placeholder="Необязательно" /></label>
+              <div class="buy-row">
+                <label class="field"><span>Цена, LUNE</span><input class="input" id="nftPrice" type="number" min="1" value="500" /></label>
+                <label class="field"><span>Тираж</span><input class="input" id="nftSupply" type="number" min="1" value="1000" /></label>
+              </div>
+              <div class="field"><span>Фоны (каждому экземпляру достаётся случайный)</span><div class="chips wrap" id="nftBackdrops"></div></div>
+              <button class="btn-black" id="nftCreateBtn">Выпустить коллекцию</button>
+              <h3>Коллекции</h3>
+              <ul class="people" id="adminCollections"></ul>
+            </div>
           </div>
+        </div>
+      </div>
+        <!-- Маркет подарков -->
+        <div class="page pushed" id="marketPage">
+          <header class="bar">
+            <button class="icon-btn bar-side" data-pop aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+            <b class="bar-title">Маркет</b>
+            <button class="lune-chip bar-side right" id="marketLune">☾ 0</button>
+          </header>
+          <nav class="seg-text" id="marketSeg"><button data-m="shop" class="active">Коллекции</button><button data-m="resale">Перепродажа</button><button data-m="mine">Мои NFT</button></nav>
+          <div class="scroller"><div class="nft-grid" id="marketGrid"></div><div class="empty" id="marketEmpty" hidden></div></div>
         </div>
       </div>
       <div class="banned" id="bannedScreen" hidden>
@@ -349,6 +380,8 @@
             <div class="icon-picker" id="iconPicker"></div>
           </div>
           <button class="group-row link-row" id="walletBtn"><span>Баланс LUNE</span><b id="luneInfo">0</b></button>
+          <button class="group-row link-row" id="marketBtn"><span>Маркет подарков</span><b>›</b></button>
+          <button class="group-row link-row" id="updateBtn"><span>Обновление</span><b id="versionInfo"></b></button>
           <button class="group-row link-row" id="adminBtn" hidden><span>Админ-панель</span><b>›</b></button>
           <div class="group-row"><span>Firebase</span><b class="mono" id="serverInfo"></b></div>
           <div class="group-row"><span>Связь</span><b id="connInfo">—</b></div>
@@ -373,6 +406,29 @@
       <div class="grabber"></div>
       <header class="sheet-head"><span></span><b>Пользователь</b><button class="link-btn strong" data-close>Готово</button></header>
       <div class="sheet-body" id="adminUserBody"></div>
+    </div>
+
+    <div class="sheet" id="giftSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head"><button class="link-btn" data-close>Отмена</button><b id="giftTitle">Подарок</b><span class="lune-chip" id="giftLune">☾ 0</span></header>
+      <nav class="seg-text" id="giftSeg"><button data-g="gifts" class="active">Подарки</button><button data-g="nft">Мои NFT</button></nav>
+      <div class="sheet-body">
+        <div class="gift-grid" id="giftGrid"></div>
+        <input class="input" id="giftText" maxlength="120" placeholder="Подпись к подарку (необязательно)" />
+        <button class="btn-black" id="giftSendBtn" disabled>Выберите подарок</button>
+      </div>
+    </div>
+
+    <div class="sheet short" id="nftSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head"><span></span><b id="nftSheetTitle">NFT</b><button class="link-btn strong" data-close>Готово</button></header>
+      <div class="sheet-body" id="nftSheetBody"></div>
+    </div>
+
+    <div class="sheet short" id="updateSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head"><span></span><b>Обновление</b><button class="link-btn strong" data-close>Готово</button></header>
+      <div class="sheet-body" id="updateBody"></div>
     </div>
 
     <div class="action-sheet" id="actionSheet" hidden>
@@ -434,6 +490,7 @@
     <div class="viewer" id="viewer" hidden><img alt="" /><video controls playsinline hidden></video></div>
   </div>
 
+  <script src="version.js"></script>
   <script src="vendor/firebase.js"></script>
   <script src="backend.js"></script>
   <script src="app.js"></script>

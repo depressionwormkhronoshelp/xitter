@@ -816,6 +816,8 @@
     if (a.type === 'follow') return `${name} подписался(-ась) на вас${t}`;
     if (a.type === 'like') return `${name} оценил(а) ваш пост${t}`;
     if (a.type === 'comment') return `${name} прокомментировал(а): ${esc(a.text || '')}${t}`;
+    if (a.type === 'gift') return `${name} подарил(а) вам ${esc((GIFT_INFO[a.gift] || ['🎁', 'подарок'])[0])} ${esc((GIFT_INFO[a.gift] || ['', 'подарок'])[1].toLowerCase())}${t}`;
+    if (a.type === 'nft') return `${name} подарил(а) вам NFT${t}`;
     return name + t;
   }
   function renderActivity(animate) {
@@ -825,7 +827,8 @@
     const row = (a, i) => {
       const u = user(a.from);
       let right = '';
-      if (a.type === 'follow') right = `<button class="btn-out ${f.has(a.from) ? 'on' : ''}" data-follow="${esc(a.from)}" data-label="Подписаться">${f.has(a.from) ? 'Вы подписаны' : 'Подписаться'}</button>`;
+      if (a.type === 'gift' || a.type === 'nft') right = `<span class="thumb gift-thumb">${a.type === 'gift' ? (GIFT_INFO[a.gift] || ['🎁'])[0] : '💎'}</span>`;
+      else if (a.type === 'follow') right = `<button class="btn-out ${f.has(a.from) ? 'on' : ''}" data-follow="${esc(a.from)}" data-label="Подписаться">${f.has(a.from) ? 'Вы подписаны' : 'Подписаться'}</button>`;
       else {
         const p = findPost(a.postId);
         const img = p && safePhoto(p.image);
@@ -861,6 +864,7 @@
     if (!row) return;
     const a = S.activity.find((x) => x.id === row.dataset.act);
     if (!a) return;
+    if (a.type === 'gift' || a.type === 'nft') { resetStack(); switchTab('me'); loadGifts(S.me.id); return; }
     if (u || a.type === 'follow') openUser(a.from);
     else if (findPost(a.postId)) openPost(a.postId);
     else toast('Пост удалён');
@@ -872,7 +876,7 @@
     const f = following();
     const btns = isMe
       ? `<button class="btn-soft" id="editProfileBtn">Редактировать профиль</button><button class="btn-soft" data-chats>Сообщения</button>`
-      : `<button class="btn-out ${f.has(u.id) ? 'on' : ''}" data-follow="${esc(u.id)}">${f.has(u.id) ? 'Вы подписаны' : 'Подписаться'}</button><button class="btn-soft" data-message="${esc(u.id)}">Сообщение</button>`;
+      : `<button class="btn-out ${f.has(u.id) ? 'on' : ''}" data-follow="${esc(u.id)}">${f.has(u.id) ? 'Вы подписаны' : 'Подписаться'}</button><button class="btn-soft" data-message="${esc(u.id)}">Сообщение</button><button class="btn-soft gift-btn" data-giftto="${esc(u.id)}" aria-label="Подарить"><svg><use href="#i-gift"/></svg></button>`;
     const s = styleOf(u);
     const banner = s.banner && s.banner.id
       ? `<div class="banner fx-${esc(EFFECTS[s.effect] ? s.effect || 'none' : 'none')}" data-media="${esc(s.banner.id)}"><i class="fx"></i></div>` : '';
@@ -897,6 +901,7 @@
       ${badges ? `<div class="badges">${badges}</div>` : ''}
       ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
       ${music}
+      ${giftsStripHTML(u.id, isMe)}
       <div class="profile-btns">${btns}</div>
     </div>
     <div class="profile-posts"></div>
@@ -913,7 +918,11 @@
     if (cache) listCache.set(nh, cache);
     renderPosts(nh, S.posts.filter((p) => p.author === u.id));
   }
-  function renderMeProfile() { if (S.me) renderProfileInto($('#meProfile'), S.me, true, S.meFollowers); }
+  function renderMeProfile() {
+    if (!S.me) return;
+    if (!giftCache.has(S.me.id)) loadGifts(S.me.id);
+    renderProfileInto($('#meProfile'), S.me, true, S.meFollowers);
+  }
   async function loadMyFollowers() {
     try { S.meFollowers = (await B.getUser(S.me.id)).followers; renderMeProfile(); } catch {}
   }
@@ -927,6 +936,7 @@
     if (!uid) return;
     if (uid === S.me.id) { resetStack(); switchTab('me'); return; }
     S.viewUser = { id: uid, followers: null };
+    loadGifts(uid);
     const box = $('#userProfile');
     box.replaceChildren();
     renderUserProfile();
@@ -946,6 +956,13 @@
       if (e.target.closest('#editProfileBtn')) { openEdit(); return; }
       if (e.target.closest('[data-chats]')) { openChats(); return; }
       if (e.target.closest('[data-wallet]')) { openWallet(); return; }
+      const gt = e.target.closest('[data-giftto]');
+      if (gt) { openGiftSheet(gt.dataset.giftto); return; }
+      if (e.target.closest('[data-market]')) { openMarket(); return; }
+      const nf = e.target.closest('[data-nft]');
+      if (nf) { openNft(nf.dataset.nft); return; }
+      const gf = e.target.closest('[data-giftinfo]');
+      if (gf) { giftInfo(gf.dataset.giftinfo); return; }
       const mu = e.target.closest('[data-music]');
       if (mu) { toggleProfileMusic(mu.dataset.music); return; }
       const g = e.target.closest('[data-go]');
@@ -1251,6 +1268,374 @@
     el.classList.remove('loading');
   }
 
+
+  // ---------- подарки ----------
+  const GIFT_INFO = {
+    heart: ['💝', 'Сердце'], bear: ['🧸', 'Мишка'], gift: ['🎁', 'Подарок'], rose: ['🌹', 'Роза'], cake: ['🎂', 'Торт'], bouquet: ['💐', 'Букет'],
+    rocket: ['🚀', 'Ракета'], trophy: ['🏆', 'Кубок'], ring: ['💍', 'Кольцо'], diamond: ['💎', 'Бриллиант'], champagne: ['🍾', 'Шампанское'],
+  };
+  const BACKDROPS = {
+    sapphire: ['Сапфир', '#4facfe', '#1e3c72'], emerald: ['Изумруд', '#43e97b', '#0b6e4f'], ruby: ['Рубин', '#ff5f6d', '#8b0a1a'],
+    amethyst: ['Аметист', '#c471f5', '#4a1b8c'], gold: ['Золото', '#f9d423', '#c76b00'], onyx: ['Оникс', '#5a5a5a', '#0b0b0b'],
+    coral: ['Коралл', '#ff9a8b', '#ff5e62'], mint: ['Мята', '#a8edea', '#2bb3a3'], midnight: ['Полночь', '#3a4bb0', '#0f0c29'], sunset: ['Закат', '#ffb347', '#e1306c'],
+  };
+  const giftCache = new Map(); // uid -> { gifts, nfts }
+  let collectionsLoaded = null;
+  const ensureCollections = () => (collectionsLoaded ||= B.listCollections().catch((e) => { collectionsLoaded = null; throw e; }));
+  async function loadGifts(uid) {
+    try {
+      await ensureCollections();
+      giftCache.set(uid, await B.userGifts(uid));
+      schedule();
+      if (isOpen('marketPage')) renderMarket();
+    } catch (e) { console.warn(e); }
+  }
+  // NFT: экземпляр (cid, num, backdrop) или коллекция (id, backdrops)
+  function nftArtHTML(n, big) {
+    const col = n.cid ? B.collection(n.cid) || n : n;
+    const bd = BACKDROPS[n.backdrop || (col.backdrops || [])[0]] || BACKDROPS.sapphire;
+    const img = col.image && col.image.id ? ` data-media="${esc(col.image.id)}"` : '';
+    return `<span class="nft-art ${big ? 'big' : ''}" style="--b1:${bd[1]};--b2:${bd[2]}"><span class="nft-img"${img}>${img ? '' : esc(col.emoji || '🎁')}</span></span>`;
+  }
+  const nftName = (n) => { const c = B.collection(n.cid); return `${c ? c.name : 'NFT'} #${n.num}`; };
+  function giftsStripHTML(uid, isMe) {
+    const g = giftCache.get(uid);
+    if (!g) return '';
+    const total = g.gifts.length + g.nfts.length;
+    if (!total && !isMe) return '';
+    const tiles = [
+      ...g.nfts.map((n) => `<button class="gift-tile nft" data-nft="${esc(n.id)}">${nftArtHTML(n)}<small>#${n.num}</small></button>`),
+      ...g.gifts.map((x) => `<button class="gift-tile" data-giftinfo="${esc(x.id)}"><span class="gift-art">${(GIFT_INFO[x.type] || ['🎁'])[0]}</span><small>${avatarHTML(user(x.from), 'xxs')}</small></button>`),
+    ].join('');
+    return `<div class="profile-gifts"><div class="pg-head"><b>Подарки${total ? ' · ' + total : ''}</b>${isMe ? '<button class="link-btn" data-market>Маркет ›</button>' : ''}</div>
+      ${total ? `<div class="pg-strip">${tiles}</div>` : '<p class="fine">Пока нет подарков</p>'}</div>`;
+  }
+  function giftInfo(id) {
+    for (const g of giftCache.values()) {
+      const x = g.gifts.find((y) => y.id === id);
+      if (x) { const i = GIFT_INFO[x.type] || ['🎁', 'Подарок']; toast(`${i[0]} ${i[1]} от ${user(x.from).name}${x.text ? ': «' + x.text + '»' : ''}`); return; }
+    }
+  }
+
+  // шторка «Подарить»
+  const GS = { to: null, tab: 'gifts', sel: null };
+  async function openGiftSheet(uid) {
+    GS.to = uid; GS.tab = 'gifts'; GS.sel = null;
+    $('#giftText').value = '';
+    $('#giftTitle').textContent = 'Подарок для ' + user(uid).name;
+    $$('#giftSeg button').forEach((b) => b.classList.toggle('active', b.dataset.g === 'gifts'));
+    renderGiftSheet();
+    openSheet('giftSheet');
+    if (!giftCache.has(S.me.id)) { await loadGifts(S.me.id); renderGiftSheet(); }
+  }
+  function renderGiftSheet() {
+    $('#giftLune').textContent = '☾ ' + num(S.me.lune || 0);
+    const grid = $('#giftGrid');
+    if (GS.tab === 'gifts') {
+      grid.innerHTML = Object.entries(GIFT_INFO).map(([k, [e, name]]) => `<button class="gift-tile big ${GS.sel === k ? 'sel' : ''}" data-pick="${k}"><span class="gift-art">${e}</span><span class="gname">${name}</span><span class="price">☾ ${B.GIFTS[k]}</span></button>`).join('');
+    } else {
+      const mine = (giftCache.get(S.me.id) || { nfts: [] }).nfts;
+      grid.innerHTML = mine.length
+        ? mine.map((n) => `<button class="gift-tile big nft ${GS.sel === n.id ? 'sel' : ''}" data-pick="${esc(n.id)}">${nftArtHTML(n)}<span class="gname">${esc(nftName(n))}</span></button>`).join('')
+        : '<div class="empty"><b>У вас нет NFT</b><span>Их можно купить в маркете</span></div>';
+    }
+    $('#giftText').hidden = GS.tab !== 'gifts';
+    const btn = $('#giftSendBtn');
+    btn.disabled = !GS.sel;
+    btn.textContent = !GS.sel ? 'Выберите подарок' : GS.tab === 'gifts' ? `Отправить за ☾ ${B.GIFTS[GS.sel]}` : 'Подарить NFT';
+  }
+  $$('#giftSeg button').forEach((b) => b.addEventListener('click', () => {
+    GS.tab = b.dataset.g; GS.sel = null;
+    $$('#giftSeg button').forEach((x) => x.classList.toggle('active', x === b));
+    renderGiftSheet();
+  }));
+  $('#giftGrid').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pick]');
+    if (!b) return;
+    GS.sel = b.dataset.pick;
+    renderGiftSheet();
+    haptic(6);
+  });
+  $('#giftSendBtn').addEventListener('click', async (e) => {
+    if (!GS.sel || !GS.to || !canPost()) return;
+    const to = GS.to;
+    try {
+      if (GS.tab === 'gifts') {
+        const type = GS.sel, note = $('#giftText').value.trim();
+        if ((S.me.lune || 0) < B.GIFTS[type]) { toast(`Нужно ${B.GIFTS[type]} LUNE`); return; }
+        await busy(e.currentTarget, () => B.sendGift(to, type, note));
+        const chat = await B.openDM(to);
+        S.chats.set(chat.id, S.chats.get(chat.id) || chat);
+        B.send(chat.id, `${GIFT_INFO[type][0]} Подарок: ${GIFT_INFO[type][1]}`, { kind: 'gift', gift: type, price: B.GIFTS[type], note });
+      } else {
+        const n = giftCache.get(S.me.id).nfts.find((x) => x.id === GS.sel);
+        await busy(e.currentTarget, () => B.transferNFT(n.id, to));
+        const chat = await B.openDM(to);
+        S.chats.set(chat.id, S.chats.get(chat.id) || chat);
+        B.send(chat.id, `💎 NFT-подарок: ${nftName(n)}`, { kind: 'nftgift', nft: { id: n.id, name: (B.collection(n.cid) || {}).name || 'NFT', num: n.num, cid: n.cid, backdrop: n.backdrop } });
+      }
+      closeSheet();
+      toast('Подарок отправлен 🎉');
+      haptic([10, 40, 10]);
+      loadGifts(to); loadGifts(S.me.id);
+    } catch (err) { toast(err.message); }
+  });
+
+  // ---------- маркет NFT ----------
+  const MK = { tab: 'shop', cols: [], resale: [] };
+  async function openMarket() {
+    if (!isOpen('marketPage')) push('marketPage');
+    renderMarket();
+    try {
+      collectionsLoaded = null;
+      const [cols, resale] = await Promise.all([ensureCollections(), B.market()]);
+      MK.cols = cols; MK.resale = resale;
+      await loadGifts(S.me.id);
+      renderMarket();
+    } catch (e) { toast(e.message); }
+  }
+  function renderMarket() {
+    $('#marketLune').textContent = '☾ ' + num(S.me.lune || 0);
+    let html = '', empty = '';
+    if (MK.tab === 'shop') {
+      const cols = MK.cols.filter((c) => c.active !== false || B.isAdmin);
+      html = cols.map((c) => {
+        const left = c.supply - c.minted;
+        return `<div class="nft-card">${nftArtHTML(c)}<b>${esc(c.name)}</b><small>${num(c.minted)} из ${num(c.supply)} выпущено</small>
+          ${left > 0 && c.active !== false ? `<button class="price-btn" data-mint="${esc(c.id)}">☾ ${num(c.price)}</button>` : `<span class="sold">${left > 0 ? 'Продажи остановлены' : 'Распродано'}</span>`}</div>`;
+      }).join('');
+      empty = '<b>Коллекций пока нет</b><span>Их выпускает администрация</span>';
+    } else if (MK.tab === 'resale') {
+      html = MK.resale.map((n) => `<div class="nft-card" data-nft="${esc(n.id)}">${nftArtHTML(n)}<b>${esc(nftName(n))}</b><small>${esc((BACKDROPS[n.backdrop] || [''])[0])} · ${esc(user(n.owner).name)}</small>
+        ${n.owner === S.me.id ? '<span class="sold">Ваш</span>' : `<button class="price-btn resale" data-buy="${esc(n.id)}">☾ ${num(n.salePrice)}</button>`}</div>`).join('');
+      empty = '<b>Сейчас ничего не продаётся</b><span>Свои NFT можно выставить во вкладке «Мои NFT»</span>';
+    } else {
+      const mine = (giftCache.get(S.me.id) || { nfts: [] }).nfts;
+      html = mine.map((n) => `<div class="nft-card" data-nft="${esc(n.id)}">${nftArtHTML(n)}<b>${esc(nftName(n))}</b><small>${esc((BACKDROPS[n.backdrop] || [''])[0])}</small>${n.salePrice > 0 ? `<span class="sold">на продаже · ☾ ${num(n.salePrice)}</span>` : ''}</div>`).join('');
+      empty = '<b>У вас пока нет NFT</b><span>Купите во вкладке «Коллекции»</span>';
+    }
+    $('#marketGrid').innerHTML = html;
+    $('#marketEmpty').innerHTML = empty;
+    $('#marketEmpty').hidden = !!html;
+  }
+  $$('#marketSeg button').forEach((b) => b.addEventListener('click', () => {
+    MK.tab = b.dataset.m;
+    $$('#marketSeg button').forEach((x) => x.classList.toggle('active', x === b));
+    renderMarket();
+  }));
+  $('#marketLune').addEventListener('click', openWallet);
+  $('#marketGrid').addEventListener('click', async (e) => {
+    const m = e.target.closest('[data-mint]');
+    if (m) {
+      const c = MK.cols.find((x) => x.id === m.dataset.mint);
+      if ((S.me.lune || 0) < c.price) { toast(`Нужно ${c.price} LUNE`); return; }
+      if (!canPost()) return;
+      try {
+        const nid = await busy(m, () => B.mintNFT(c.id));
+        toast(`Ваш ${c.name} #${nid.split('_').pop()} 🎉`);
+        haptic([10, 40, 10]);
+        await openMarket();
+        openNft(nid);
+      } catch (err) { toast(err.message); }
+      return;
+    }
+    const bb = e.target.closest('[data-buy]');
+    if (bb) { e.stopPropagation(); buyNft(bb.dataset.buy, bb); return; }
+    const n = e.target.closest('[data-nft]');
+    if (n) openNft(n.dataset.nft);
+  });
+  async function buyNft(nid, btn) {
+    const n = MK.resale.find((x) => x.id === nid);
+    if (n && (S.me.lune || 0) < n.salePrice) { toast(`Нужно ${n.salePrice} LUNE`); return; }
+    if (!canPost()) return;
+    try {
+      await busy(btn, () => B.buyNFT(nid));
+      toast('NFT куплен 🎉');
+      haptic([10, 40, 10]);
+      closeSheet();
+      await openMarket();
+    } catch (err) { toast(err.message); }
+  }
+
+  // карточка NFT
+  let nftOpen = null;
+  function findNft(nid) {
+    for (const g of giftCache.values()) { const n = g.nfts.find((x) => x.id === nid); if (n) return n; }
+    return MK.resale.find((x) => x.id === nid) || null;
+  }
+  async function openNft(nid) {
+    nftOpen = findNft(nid) || { id: nid, cid: nid.split('_').slice(0, -1).join('_'), num: +nid.split('_').pop(), owner: null };
+    await ensureCollections().catch(() => {});
+    renderNftSheet();
+    openSheet('nftSheet');
+  }
+  function renderNftSheet() {
+    const n = nftOpen;
+    if (!n) return;
+    const c = B.collection(n.cid) || {};
+    const mine = n.owner === S.me.id;
+    $('#nftSheetTitle').textContent = nftName(n);
+    $('#nftSheetBody').innerHTML = `
+      <div class="nft-hero">${nftArtHTML(n, true)}<h3>${esc(nftName(n))}</h3>${c.description ? `<p class="fine center">${esc(c.description)}</p>` : ''}</div>
+      <div class="group">
+        <div class="group-row"><span>Владелец</span><b>${n.owner ? esc(mine ? 'Вы' : user(n.owner).name) : '—'}</b></div>
+        <div class="group-row"><span>Фон</span><b>${esc((BACKDROPS[n.backdrop] || ['—'])[0])}</b></div>
+        <div class="group-row"><span>Тираж</span><b>${c.supply ? `${num(c.minted)} / ${num(c.supply)}` : '—'}</b></div>
+        ${n.salePrice > 0 ? `<div class="group-row"><span>Цена</span><b>☾ ${num(n.salePrice)}</b></div>` : ''}
+      </div>
+      ${mine ? `
+        <div class="field"><span>${n.salePrice > 0 ? 'На продаже' : 'Выставить на перепродажу'}</span>
+          <div class="buy-row"><input class="input" id="nftSaleInput" type="number" min="1" placeholder="Цена в LUNE" value="${n.salePrice || ''}" /><button class="btn-black small" data-sale>${n.salePrice > 0 ? 'Изменить' : 'Выставить'}</button>${n.salePrice > 0 ? '<button class="btn-soft small danger" data-unsale>Снять</button>' : ''}</div></div>
+        <div class="field"><span>Подарить</span>
+          <div class="buy-row"><input class="input" id="nftToInput" placeholder="@username" autocapitalize="none" /><button class="btn-soft small" data-transfer>Подарить</button></div></div>`
+      : n.salePrice > 0 ? `<button class="btn-black" data-buynft>Купить за ☾ ${num(n.salePrice)}</button>` : ''}`;
+  }
+  $('#nftSheetBody').addEventListener('click', async (e) => {
+    const n = nftOpen;
+    if (!n) return;
+    const b = e.target.closest('button');
+    if (!b) return;
+    try {
+      if (b.matches('[data-sale]')) {
+        const price = Math.round(+$('#nftSaleInput').value || 0);
+        if (price < 1) { toast('Введите цену'); return; }
+        await busy(b, () => B.setSalePrice(n.id, price));
+        n.salePrice = price;
+        toast('Выставлено на продажу');
+      } else if (b.matches('[data-unsale]')) {
+        await busy(b, () => B.setSalePrice(n.id, 0));
+        n.salePrice = 0;
+        toast('Снято с продажи');
+      } else if (b.matches('[data-transfer]')) {
+        const to = await B.findUserByName($('#nftToInput').value);
+        if (to === S.me.id) { toast('Это вы'); return; }
+        await busy(b, () => B.transferNFT(n.id, to));
+        const chat = await B.openDM(to);
+        S.chats.set(chat.id, S.chats.get(chat.id) || chat);
+        B.send(chat.id, `💎 NFT-подарок: ${nftName(n)}`, { kind: 'nftgift', nft: { id: n.id, name: (B.collection(n.cid) || {}).name || 'NFT', num: n.num, cid: n.cid, backdrop: n.backdrop } });
+        n.owner = to;
+        toast('NFT подарен 🎉');
+        loadGifts(to);
+      } else if (b.matches('[data-buynft]')) {
+        await buyNft(n.id, b);
+        return;
+      } else return;
+      renderNftSheet();
+      await loadGifts(S.me.id);
+      if (isOpen('marketPage')) openMarket();
+    } catch (err) { toast(err.message); }
+  });
+
+  // ---------- создатель NFT в админке ----------
+  const NC = { backdrops: new Set(['sapphire', 'amethyst', 'gold']), image: null };
+  function renderNftCreator() {
+    $('#nftBackdrops').innerHTML = Object.entries(BACKDROPS).map(([k, [name, a, b]]) => `<button type="button" data-bd="${k}" class="bd-chip ${NC.backdrops.has(k) ? 'active' : ''}" style="--b1:${a};--b2:${b}"><i></i>${name}</button>`).join('');
+    const preview = { emoji: $('#nftEmoji').value.trim() || '🎁', image: NC.image, backdrops: [...NC.backdrops] };
+    $('#nftPreview').innerHTML = (preview.backdrops.length ? preview.backdrops : ['sapphire']).slice(0, 4).map((bd) => nftArtHTML({ ...preview, backdrop: bd })).join('');
+    $('#nftImageBtn').textContent = NC.image ? 'Картинка загружена · убрать' : 'Загрузить картинку';
+    renderAdminCollections();
+  }
+  async function renderAdminCollections() {
+    try {
+      collectionsLoaded = null;
+      const cols = await ensureCollections();
+      $('#adminCollections').innerHTML = cols.map((c) => `<li class="row">${nftArtHTML(c)}<div class="row-main"><b>${esc(c.name)}</b><span>${num(c.minted)} / ${num(c.supply)} · ☾ ${num(c.price)}</span></div>
+        <button class="btn-out ${c.active !== false ? '' : 'on'}" data-colactive="${esc(c.id)}">${c.active !== false ? 'Остановить' : 'Запустить'}</button></li>`).join('') || '<p class="fine">Коллекций пока нет</p>';
+    } catch (e) { toast(e.message); }
+  }
+  $('#nftBackdrops').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-bd]');
+    if (!b) return;
+    NC.backdrops.has(b.dataset.bd) ? NC.backdrops.delete(b.dataset.bd) : NC.backdrops.add(b.dataset.bd);
+    renderNftCreator();
+  });
+  $('#nftEmoji').addEventListener('input', () => renderNftCreator());
+  $('#nftImageBtn').addEventListener('click', async (e) => {
+    if (NC.image) { NC.image = null; renderNftCreator(); return; }
+    const f = await anyFile('image/*');
+    if (!f) return;
+    if (!/^image\//.test(f.type)) { toast('Нужна картинка'); return; }
+    try { const up = await uploadPicked(f, e.currentTarget); NC.image = { id: up.id, type: up.type }; renderNftCreator(); } catch (err) { toast(err.message); }
+  });
+  $('#nftCreateBtn').addEventListener('click', async (e) => {
+    try {
+      await busy(e.currentTarget, () => B.createCollection({
+        name: $('#nftName').value, emoji: firstGrapheme($('#nftEmoji').value.trim()), image: NC.image, description: $('#nftDesc').value,
+        price: $('#nftPrice').value, supply: $('#nftSupply').value, backdrops: [...NC.backdrops],
+      }));
+      toast('Коллекция выпущена 🎉');
+      $('#nftName').value = ''; $('#nftEmoji').value = ''; $('#nftDesc').value = ''; NC.image = null;
+      renderNftCreator();
+    } catch (err) { toast(err.message); }
+  });
+  $('#adminCollections').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-colactive]');
+    if (!b) return;
+    const c = B.collection(b.dataset.colactive);
+    try { await B.setCollectionActive(c.id, c.active === false); toast(c.active === false ? 'Продажи запущены' : 'Продажи остановлены'); renderAdminCollections(); } catch (err) { toast(err.message); }
+  });
+
+  // ---------- обновления ----------
+  const BUILD = window.XITTER_BUILD || { run: 0, sha: 'dev' };
+  const REPO = 'depressionwormkhronoshelp/xitter';
+  const ASSETS = { android: 'Xitter.apk', windows: 'Xitter-Setup.exe', ios: 'Xitter-unsigned.ipa' };
+  const PLATFORM_NAME = { android: 'Android', windows: 'Windows', ios: 'iPhone', web: 'веб-версия' };
+  function platform() {
+    if (window.xitterDesktop) return 'windows';
+    if (window.XitterNative || (isApp && /Android/i.test(navigator.userAgent))) return 'android';
+    if (isApp && /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent)) return 'ios';
+    return 'web';
+  }
+  const UPD = { latest: null, url: null, checking: false, error: '' };
+  async function checkUpdate() {
+    UPD.checking = true; UPD.error = '';
+    renderUpdate();
+    try {
+      const r = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/latest`, { cache: 'no-store' });
+      if (!r.ok) throw new Error('GitHub ответил ' + r.status);
+      const j = await r.json();
+      const m = /#(\d+)/.exec(j.name || '');
+      UPD.latest = m ? +m[1] : null;
+      const asset = (j.assets || []).find((a) => a.name === ASSETS[platform()]);
+      UPD.url = asset ? asset.browser_download_url : j.html_url;
+    } catch (e) { UPD.error = 'Не удалось проверить: ' + (e.message || 'нет связи'); }
+    UPD.checking = false;
+    renderUpdate();
+  }
+  const hasUpdate = () => UPD.latest && BUILD.run && UPD.latest > BUILD.run;
+  function renderUpdate() {
+    $('#versionInfo').textContent = hasUpdate() ? 'есть обновление' : BUILD.run ? `сборка ${BUILD.run}` : 'dev';
+    $('#versionInfo').classList.toggle('accent', !!hasUpdate());
+    const p = platform();
+    let state;
+    if (UPD.checking) state = '<p class="upd-state">Проверяю обновления…</p>';
+    else if (UPD.error) state = `<p class="upd-state">${esc(UPD.error)}</p>`;
+    else if (hasUpdate()) {
+      state = `<p class="upd-state ok">Доступна сборка ${UPD.latest}</p>` + (p === 'web'
+        ? '<button class="btn-black" data-upd="reload">Обновить</button>'
+        : `<button class="btn-black" data-upd="download">Скачать для ${PLATFORM_NAME[p]}</button>${p === 'ios' ? '<p class="fine center">Файл нужно подписать через Sideloadly или AltStore</p>' : ''}`);
+    } else if (UPD.latest) state = '<p class="upd-state">У вас последняя версия</p>';
+    else state = '';
+    $('#updateBody').innerHTML = `
+      <div class="upd-top"><img src="${iconURL(store.get('icon') || 'orange')}" alt="" /><b>Xitter</b><small>${BUILD.run ? `Сборка ${BUILD.run} · ${esc(BUILD.sha)}${BUILD.date ? ' · ' + esc(BUILD.date) : ''}` : 'Версия для разработки'} · ${PLATFORM_NAME[p]}</small></div>
+      ${state}
+      <button class="btn-soft" data-upd="check" ${UPD.checking ? 'disabled' : ''}>Проверить обновления</button>`;
+  }
+  function openUpdate() { closeSheet(); setTimeout(() => { openSheet('updateSheet'); checkUpdate(); }, 150); }
+  $('#updateBtn').addEventListener('click', openUpdate);
+  $('#updateBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-upd]');
+    if (!b) return;
+    if (b.dataset.upd === 'check') checkUpdate();
+    else if (b.dataset.upd === 'reload') {
+      try { const regs = await navigator.serviceWorker?.getRegistrations?.(); (regs || []).forEach((r) => r.update()); } catch {}
+      location.reload();
+    } else if (b.dataset.upd === 'download' && UPD.url) {
+      if (window.XitterNative && window.XitterNative.openUrl) window.XitterNative.openUrl(UPD.url);
+      else window.open(UPD.url, '_blank');
+    }
+  });
+
   // ---------- админ-панель ----------
   const ADMIN = { tab: 'overview', users: [], stats: null, sel: null };
   function openAdmin() {
@@ -1260,6 +1645,9 @@
     loadAdmin();
   }
   $('#adminBtn').addEventListener('click', openAdmin);
+  $('#marketBtn').addEventListener('click', () => { closeSheet(); setTimeout(openMarket, 150); });
+  $('#sideMarket').addEventListener('click', () => { resetStack(); openMarket(); });
+  $('#sideSettings').addEventListener('click', () => { renderMe(); openSheet('settingsSheet'); });
   $('#adminRefresh').addEventListener('click', () => loadAdmin());
   async function loadAdmin() {
     try {
@@ -1280,6 +1668,8 @@
     $('#adminStats').innerHTML = cards.map(([t, v]) => `<div class="stat"><b>${num(v)}</b><span>${t}</span></div>`).join('');
     $('#adminOverview').hidden = ADMIN.tab !== 'overview';
     $('#adminUsersBox').hidden = ADMIN.tab !== 'users';
+    $('#adminNftBox').hidden = ADMIN.tab !== 'nft';
+    if (ADMIN.tab === 'nft') renderNftCreator();
     const q = $('#adminSearch').value.trim().toLowerCase().replace(/^@/, '');
     const list = us.filter((u) => !q || u.username.includes(q) || u.name.toLowerCase().includes(q) || (u.usernames || []).some((n) => n.includes(q)));
     $('#adminList').innerHTML = list.map((u, i) => `<li class="row" data-auid="${esc(u.id)}" style="--i:${Math.min(i, 12)}">
@@ -1610,6 +2000,12 @@
   }
   function bubbleHTML(m) {
     if (m.kind === 'sticker') return stickerHTML(m.sticker, m.text);
+    if (m.kind === 'gift' && GIFT_INFO[m.gift]) {
+      return `<div class="gift-bubble"><span class="gift-art">${GIFT_INFO[m.gift][0]}</span><b>${esc(GIFT_INFO[m.gift][1])}</b><small>Подарок · ☾ ${num(m.price || B.GIFTS[m.gift] || 0)}</small>${m.note ? `<p>${esc(m.note)}</p>` : ''}</div>`;
+    }
+    if (m.kind === 'nftgift' && m.nft) {
+      return `<div class="gift-bubble nft" data-nft="${esc(m.nft.id)}">${nftArtHTML(m.nft)}<b>${esc(m.nft.name || 'NFT')} #${esc(m.nft.num)}</b><small>NFT-подарок</small></div>`;
+    }
     if (m.kind === 'file' && m.file && m.file.id) {
       const f = m.file;
       return `<div class="bubble file-bubble" data-file="${esc(f.id)}"><span class="ficon"><svg><use href="#i-file"/></svg></span><span class="fmeta"><b>${esc(f.name)}</b><small>${fmtSize(f.size)} · ${/^(video|audio|image)\//.test(f.type) ? 'открыть' : 'скачать'}</small></span></div>`;
@@ -1671,6 +2067,8 @@
     if (img) { openViewer(img.src); return; }
     const v = e.target.closest('[data-voice]');
     if (v) { Voice.toggle(v.dataset.voice); return; }
+    const nfm = e.target.closest('[data-nft]');
+    if (nfm) { openNft(nfm.dataset.nft); return; }
     const fl = e.target.closest('[data-file]');
     if (fl) { openFile(fl.dataset.file, fl); return; }
     const pr = e.target.closest('[data-profile]');
@@ -2272,6 +2670,8 @@
   initAuth();
   applyTheme(store.get('theme'));
   if (store.get('icon')) setAppIcon(store.get('icon'));
+  renderUpdate();
+  if (BUILD.run) setTimeout(checkUpdate, 4000);
   B.onAuth((res) => {
     if (!res) { if (!S.started) showAuth(); return; }
     if (res.error) { if (!S.started) showAuth('stepEmail', res.error); return; }
