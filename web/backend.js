@@ -238,6 +238,7 @@
   function start(callbacks) {
     cbs = callbacks;
     watchUser(me);
+    setTimeout(sweepExpiredFiles, 15e3);
     unsubs.push(onSnapshot(query(collection(db, 'chats'), where('members', 'array-contains', me)), (snap) => {
       snap.docChanges().forEach((ch) => {
         if (ch.type === 'removed') rawChats.delete(ch.doc.id);
@@ -757,6 +758,18 @@
       await updateDoc(doc(db, 'chats', chatId), { lastMessage: l ? { text: l.text, from: l.from, ts: l.ts } : deleteField() }).catch(() => {});
     }
   });
+  // запасной вариант к TTL-политике: при входе удаляем свои просроченные вложения сами
+  async function sweepExpiredFiles() {
+    if (!me) return;
+    try {
+      const snap = await getDocs(query(collection(db, 'files'), where('owner', '==', me)));
+      const now = Date.now();
+      for (const d of snap.docs) {
+        const exp = d.data().expireAt;
+        if (exp && exp.toMillis() < now) await deleteFile(d.id).catch(() => {});
+      }
+    } catch (e) { /* не страшно, попробуем при следующем входе */ }
+  }
   async function deleteFile(id) {
     const chunks = await getDocs(collection(db, 'files', id, 'chunks'));
     await deleteAll(chunks.docs.map((d) => d.ref));
