@@ -130,6 +130,7 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           path: out
+          pattern: Xitter-*
           merge-multiple: true
       - name: Обновить релиз latest
         env:
