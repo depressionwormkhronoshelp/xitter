@@ -12,6 +12,8 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&amp;family=Press+Start+2P&amp;display=swap" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -37,6 +39,10 @@
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/></symbol>
       <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="13.5" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.4 3.4 0 0 1 4.8 4.8l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6"/></symbol>
+      <symbol id="i-sticker" viewBox="0 0 24 24"><path d="M20.5 12.5V7a3.5 3.5 0 0 0-3.5-3.5H7A3.5 3.5 0 0 0 3.5 7v10A3.5 3.5 0 0 0 7 20.5h5.5z"/><path d="M12.5 20.5v-4.5a3.5 3.5 0 0 1 3.5-3.5h4.5"/><path d="M8.5 9.5v.5M14.5 9.5v.5"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6z"/><path d="M8.8 12l2.3 2.3 4.2-4.6"/></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4.5 4.5v12.5H6z"/><path d="M14 3.5V8h4.5"/></symbol>
       <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
     </defs>
   </svg>
@@ -186,13 +192,17 @@
           </header>
           <div class="messages" id="messages"></div>
           <div class="emoji-pop" id="emojiPop" hidden></div>
+          <div class="sticker-pop" id="stickerPop" hidden></div>
+          <div class="upload-bar" id="uploadBar" hidden><span id="uploadText">Загрузка…</span><i><b id="uploadFill"></b></i></div>
           <form class="composer" id="composer">
             <div class="composer-field">
               <textarea id="msgInput" rows="1" placeholder="Сообщение..." enterkeyhint="send"></textarea>
               <span class="composer-tools">
                 <button type="button" class="tool" id="micBtn" aria-label="Голосовое"><svg><use href="#i-mic"/></svg></button>
                 <button type="button" class="tool" id="emojiBtn" aria-label="Эмодзи"><svg><use href="#i-smile"/></svg></button>
+                <button type="button" class="tool" id="stickerBtn" aria-label="Стикеры"><svg><use href="#i-sticker"/></svg></button>
                 <button type="button" class="tool" id="imgBtn" aria-label="Фото"><svg><use href="#i-image"/></svg></button>
+                <button type="button" class="tool" id="fileBtn" aria-label="Файл"><svg><use href="#i-clip"/></svg></button>
               </span>
               <button class="send" id="sendBtn" type="submit" aria-label="Отправить"><svg><use href="#i-arrow-up"/></svg></button>
             </div>
@@ -202,6 +212,7 @@
               <button type="button" class="send on" id="recSend" aria-label="Отправить голосовое"><svg><use href="#i-arrow-up"/></svg></button>
             </div>
             <input type="file" id="imgFile" accept="image/*" hidden />
+            <input type="file" id="anyFile" hidden />
           </form>
         </div>
 
@@ -229,6 +240,28 @@
             <button type="submit" class="link-btn strong">Отпр.</button>
           </form>
         </div>
+
+        <!-- Админ-панель -->
+        <div class="page pushed" id="adminPage">
+          <header class="bar">
+            <button class="icon-btn bar-side" data-pop aria-label="Назад"><svg><use href="#i-back"/></svg></button>
+            <b class="bar-title">Админ-панель</b>
+            <button class="icon-btn bar-side right" id="adminRefresh" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></svg></button>
+          </header>
+          <nav class="seg-text" id="adminSeg"><button data-admin="overview" class="active">Обзор</button><button data-admin="users">Юзеры</button></nav>
+          <div class="scroller" id="adminView">
+            <div id="adminOverview">
+              <div class="stat-grid" id="adminStats"></div>
+            </div>
+            <div id="adminUsersBox" hidden>
+              <label class="search"><svg><use href="#i-search"/></svg><input id="adminSearch" type="search" placeholder="Имя или @username" autocapitalize="none" /></label>
+              <ul class="people" id="adminList"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="banned" id="bannedScreen" hidden>
+        <div><b>Аккаунт заблокирован</b><p>Администрация Xitter заблокировала этот аккаунт.</p><button class="btn-black small" id="bannedLogout">Выйти</button></div>
       </div>
     </section>
 
@@ -280,6 +313,17 @@
         <div class="swatches" id="swatches"></div>
         <label class="field"><span>Имя</span><input class="input" id="setName" maxlength="64" /></label>
         <label class="field"><span>О себе</span><input class="input" id="setBio" maxlength="140" placeholder="Пара слов о себе" /></label>
+        <div class="field"><span>Музыка в профиле</span><div class="media-edit" id="musicEdit"></div></div>
+        <div class="plus-zone" id="plusEdit">
+          <h4>Оформление <span class="plus-badge">Plus</span></h4>
+          <p class="plus-lock" id="plusLock">Доступно с Xitter Plus. Plus выдаёт администрация.</p>
+          <div class="field"><span>Баннер профиля (фото или GIF)</span><div class="media-edit" id="bannerEdit"></div></div>
+          <div class="field"><span>Эффект баннера</span><div class="chips wrap" id="effectChips"></div></div>
+          <label class="field"><span>Эмодзи рядом с ником</span><input class="input" id="setEmoji" maxlength="8" placeholder="Например 🦊" /></label>
+          <div class="field"><span>Обводка аватарки</span><div class="chips wrap" id="ringChips"></div></div>
+          <div class="field"><span>Шрифт ника</span><div class="chips wrap" id="fontChips"></div></div>
+          <div class="field"><span>Видео или GIF на аватарке</span><div class="media-edit" id="avMediaEdit"></div></div>
+        </div>
       </div>
     </div>
 
@@ -292,15 +336,43 @@
       </header>
       <div class="sheet-body">
         <div class="group">
-          <div class="group-row"><span>Тема</span>
-            <div class="seg" id="themeSeg"><button data-theme="auto">Авто</button><button data-theme="light">Светлая</button><button data-theme="dark">Тёмная</button></div>
+          <div class="group-row col"><span>Тема</span>
+            <div class="chips wrap" id="themeSeg"><button data-theme="auto">Авто</button><button data-theme="light">Белая</button><button data-theme="dark">Чёрная</button><button data-theme="orange">Оранжевая</button><button data-theme="custom">Своя · Plus</button></div>
+            <div class="custom-colors" id="customColors" hidden>
+              <label><input type="color" data-var="bg" /><span>Фон</span></label>
+              <label><input type="color" data-var="text" /><span>Текст</span></label>
+              <label><input type="color" data-var="ink" /><span>Акцент</span></label>
+              <label><input type="color" data-var="bubble" /><span>Пузыри</span></label>
+            </div>
           </div>
+          <div class="group-row col"><span>Иконка приложения <span class="plus-badge">Plus</span></span>
+            <div class="icon-picker" id="iconPicker"></div>
+          </div>
+          <button class="group-row link-row" id="walletBtn"><span>Баланс LUNE</span><b id="luneInfo">0</b></button>
+          <button class="group-row link-row" id="adminBtn" hidden><span>Админ-панель</span><b>›</b></button>
           <div class="group-row"><span>Firebase</span><b class="mono" id="serverInfo"></b></div>
           <div class="group-row"><span>Связь</span><b id="connInfo">—</b></div>
         </div>
         <button class="btn-soft danger" id="logoutBtn">Выйти</button>
         <p class="fine center">Xitter 2.0</p>
       </div>
+    </div>
+
+    <div class="sheet short" id="walletSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head"><span></span><b>LUNE</b><button class="link-btn strong" data-close>Готово</button></header>
+      <div class="sheet-body">
+        <div class="wallet-top"><span class="lune-coin">☾</span><b id="walletBalance">0</b><small>LUNE</small></div>
+        <div class="field"><span>Дополнительные юзернеймы</span><div class="chips wrap" id="myUsernames"></div></div>
+        <div class="buy-row"><input class="input" id="buyName" maxlength="24" placeholder="новый_ник" autocapitalize="none" /><button class="btn-black small" id="buyNameBtn">Купить за 100</button></div>
+        <p class="fine">LUNE выдаёт администрация. Купленный юзернейм навсегда ваш: по нему вас найдут в поиске.</p>
+      </div>
+    </div>
+
+    <div class="sheet" id="adminUserSheet">
+      <div class="grabber"></div>
+      <header class="sheet-head"><span></span><b>Пользователь</b><button class="link-btn strong" data-close>Готово</button></header>
+      <div class="sheet-body" id="adminUserBody"></div>
     </div>
 
     <div class="action-sheet" id="actionSheet" hidden>
@@ -359,7 +431,7 @@
 
 
     <div class="toast" id="toast"></div>
-    <div class="viewer" id="viewer" hidden><img alt="" /></div>
+    <div class="viewer" id="viewer" hidden><img alt="" /><video controls playsinline hidden></video></div>
   </div>
 
   <script src="vendor/firebase.js"></script>

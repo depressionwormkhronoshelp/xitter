@@ -2,6 +2,7 @@ package com.xitter.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -9,6 +10,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -43,6 +45,7 @@ public class MainActivity extends Activity {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         s.setUserAgentString(s.getUserAgentString() + " XitterApp/1.0");
 
+        web.addJavascriptInterface(new NativeBridge(), "XitterNative");
         web.setWebViewClient(new WebViewClient());
         web.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -55,6 +58,27 @@ public class MainActivity extends Activity {
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState);
         else web.loadUrl("file:///android_asset/www/index.html");
+    }
+
+    private static final String[] ICONS = { "orange", "dark", "light", "sunset", "mint", "ocean" };
+
+    /** Мост для веб-интерфейса: смена значка на рабочем столе (Xitter Plus). */
+    private class NativeBridge {
+        @JavascriptInterface
+        public void setIcon(String name) {
+            boolean known = false;
+            for (String n : ICONS) if (n.equals(name)) known = true;
+            if (!known) name = "orange";
+            PackageManager pm = getPackageManager();
+            // сначала включаем нужный значок, потом выключаем остальные, чтобы приложение не пропало с рабочего стола
+            pm.setComponentEnabledSetting(new ComponentName(MainActivity.this, getPackageName() + ".Icon_" + name),
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
+            for (String n : ICONS) {
+                if (n.equals(name)) continue;
+                pm.setComponentEnabledSetting(new ComponentName(MainActivity.this, getPackageName() + ".Icon_" + n),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+            }
+        }
     }
 
     private boolean isDark() {

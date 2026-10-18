@@ -18,7 +18,7 @@
     GoogleAuthProvider, OAuthProvider, signInWithPopup,
     initializeFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, deleteField,
     collection, query, where, orderBy, limit, limitToLast, onSnapshot, increment, writeBatch, runTransaction,
-    arrayUnion, arrayRemove, serverTimestamp,
+    arrayUnion, arrayRemove, serverTimestamp, getCountFromServer,
   } = window.FB;
 
   const app = initializeApp(firebaseConfig);
@@ -42,9 +42,15 @@
     ['#F7971E', '#FFD200'], ['#FF7E5F', '#FEB47B'], ['#FDA085', '#F6D365'], ['#FF6A00', '#EE0979'],
   ];
   const randomColors = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+  const OWNER_EMAIL = 'cladecarvsna@gmail.com'; // владелец: вход через Google с этим адресом
+  const USERNAME_PRICE = 100; // LUNE за дополнительный юзернейм
+  const FILE_LIMIT = 20 * 1024 * 1024, PLUS_FILE_LIMIT = 50 * 1024 * 1024;
+  const CHUNK = 720000; // байт в одной части файла (в base64 ≈ 960 КБ, меньше лимита документа)
 
   let me = null; // uid
   const users = new Map(); // uid -> данные профиля
+  const statuses = new Map(); // uid -> { lune, plusUntil, verified, banned, restricted, usernames }
+  let amAdmin = false;
   const userUnsubs = new Map();
   const rawChats = new Map();
   let cbs = {};
@@ -86,10 +92,25 @@
   const onErr = (e) => { console.warn('Xitter:', e.code || e, e.message || ''); const h = humanError(e); if (e.code !== 'cancelled') emitError(h.message); };
 
   // ---------- профили ----------
+  const plusActive = (st) => !!st && (st.plusUntil || 0) > Date.now() + clockOffset;
   function publicUser(uid) {
     const u = users.get(uid);
-    if (!u) return { id: uid, username: '', name: '…', bio: '', colors: COLORS[0], online: false, lastSeen: null, following: [] };
+    const st = statuses.get(uid) || {};
+    const plus = plusActive(st);
+    const perks = {
+      lune: st.lune || 0,
+      plus,
+      plusUntil: st.plusUntil || 0,
+      verified: !!st.verified,
+      banned: !!st.banned,
+      restricted: !!st.restricted,
+      usernames: st.usernames || [],
+    };
+    if (!u) return { id: uid, username: '', name: '…', bio: '', colors: COLORS[0], online: false, lastSeen: null, following: [], style: {}, ...perks };
     return {
+      ...perks,
+      style: plus ? u.style || {} : {},
+      music: u.music || null,
       id: uid,
       username: u.username || '',
       name: u.name || u.username || 'Без имени',
@@ -120,6 +141,11 @@
       users.set(uid, s.data());
       const d = s.data();
       if (uid === me && !s.metadata.hasPendingWrites && d.serverSeen && d.lastSeen && d.serverSeen.toMillis) clockOffset = d.serverSeen.toMillis() - d.lastSeen;
+      if (uid === me && cbs.onMe) cbs.onMe(publicUser(me));
+      emitAll();
+    }, (e) => console.warn('Xitter:', e.code || e)));
+    userUnsubs.set(uid + ':status', onSnapshot(doc(db, 'status', uid), (s) => {
+      statuses.set(uid, s.exists() ? s.data() : {});
       if (uid === me && cbs.onMe) cbs.onMe(publicUser(me));
       emitAll();
     }, (e) => console.warn('Xitter:', e.code || e)));
@@ -234,6 +260,7 @@
       cbs.onActivity && cbs.onActivity(items);
     }, onErr));
     listenIncomingCalls();
+    watchAdmin();
     setPresence(true);
     heartbeat = setInterval(() => { if (document.visibilityState === 'visible') setPresence(true); emitAll(); }, 30e3);
   }
@@ -253,6 +280,8 @@
     userUnsubs.forEach((u) => u());
     userUnsubs.clear();
     users.clear();
+    statuses.clear();
+    amAdmin = false;
     rawChats.clear();
     for (const w of callWatch.values()) w.forEach((u) => u());
     callWatch.clear();
@@ -265,20 +294,24 @@
     if (typeof patch.bio === 'string') data.bio = patch.bio.trim().slice(0, 140);
     if (Array.isArray(patch.colors)) data.colors = patch.colors;
     if (typeof patch.photo === 'string' && patch.photo.length < 300000) data.photo = patch.photo;
+    if (patch.style && typeof patch.style === 'object') data.style = patch.style;
+    if (patch.music !== undefined) data.music = patch.music ? { id: String(patch.music.id), title: String(patch.music.title || '').slice(0, 80), size: +patch.music.size || 0 } : deleteField();
     await updateDoc(doc(db, 'users', me), data);
-    users.set(me, { ...users.get(me), ...data });
+    users.set(me, { ...users.get(me), ...data, ...(patch.music === null ? { music: null } : {}) });
     return publicUser(me);
   });
 
   const searchUsers = wrap(async (q) => {
     q = String(q || '').trim().toLowerCase().replace(/^@/, '');
-    const snap = await getDocs(collection(db, 'users'));
+    const [snap, sts] = await Promise.all([getDocs(collection(db, 'users')), getDocs(collection(db, 'status')).catch(() => null)]);
+    if (sts) sts.forEach((d) => statuses.set(d.id, d.data()));
     const out = [];
     snap.forEach((d) => {
       const u = d.data();
       users.set(d.id, u);
       if (d.id === me || !u.username) return;
-      if (!q || u.username.includes(q) || (u.name || '').toLowerCase().includes(q)) out.push(publicUser(d.id));
+      const extra = (statuses.get(d.id) || {}).usernames || [];
+      if (!q || u.username.includes(q) || (u.name || '').toLowerCase().includes(q) || extra.some((n) => n.includes(q))) out.push(publicUser(d.id));
     });
     return out.sort((a, b) => b.online - a.online || a.name.localeCompare(b.name)).slice(0, 60);
   });
@@ -527,6 +560,122 @@
     }
   }
 
+  // ---------- файлы: части по ~1 МБ в Firestore ----------
+  const toB64 = (buf) => {
+    let bin = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
+  const fileLimit = () => (plusActive(statuses.get(me)) ? PLUS_FILE_LIMIT : FILE_LIMIT);
+  // onProgress(0..1); возвращает { id, name, size, type }
+  const uploadFile = wrap(async (file, onProgress) => {
+    if (!file) throw new Error('Нет файла');
+    const limitBytes = fileLimit();
+    if (file.size > limitBytes) {
+      throw new Error(limitBytes === FILE_LIMIT ? 'Файл больше 20 МБ. С Xitter Plus можно до 50 МБ' : 'Файл больше 50 МБ');
+    }
+    const ref = doc(collection(db, 'files'));
+    const parts = Math.max(1, Math.ceil(file.size / CHUNK));
+    const meta = { owner: me, name: String(file.name || 'файл').slice(0, 120), size: file.size, type: String(file.type || 'application/octet-stream').slice(0, 80), chunks: parts, createdAt: Date.now() };
+    await setDoc(ref, meta);
+    let done = 0;
+    const one = async (i) => {
+      const buf = await file.slice(i * CHUNK, (i + 1) * CHUNK).arrayBuffer();
+      await setDoc(doc(db, 'files', ref.id, 'chunks', String(i).padStart(4, '0')), { d: toB64(buf) });
+      done++;
+      onProgress && onProgress(done / parts);
+    };
+    // по три части параллельно
+    let next = 0;
+    await Promise.all([0, 1, 2].map(async () => { while (next < parts) await one(next++); }));
+    return { id: ref.id, name: meta.name, size: meta.size, type: meta.type };
+  });
+
+  const fileCache = new Map(); // id -> Promise<{ url, name, type, size }>
+  function fileURL(id) {
+    if (!fileCache.has(id)) {
+      const p = (async () => {
+        const m = await getDoc(doc(db, 'files', id));
+        if (!m.exists()) throw new Error('Файл не найден');
+        const meta = m.data();
+        const snap = await getDocs(collection(db, 'files', id, 'chunks'));
+        if (snap.size < meta.chunks) throw new Error('Файл ещё загружается');
+        const parts = snap.docs.sort((a, b) => a.id.localeCompare(b.id)).map((d) => {
+          const bin = atob(d.data().d);
+          const u8 = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+          return u8;
+        });
+        const blob = new Blob(parts, { type: meta.type });
+        return { url: URL.createObjectURL(blob), name: meta.name, type: meta.type, size: meta.size };
+      })();
+      p.catch(() => fileCache.delete(id));
+      fileCache.set(id, p);
+    }
+    return fileCache.get(id);
+  }
+
+  // ---------- LUNE, Plus и админка ----------
+  const isOwner = () => {
+    const u = auth.currentUser;
+    return !!u && (u.email || '').toLowerCase() === OWNER_EMAIL && u.emailVerified;
+  };
+  function watchAdmin() {
+    unsubs.push(onSnapshot(doc(db, 'admins', me), (s) => {
+      amAdmin = s.exists() || isOwner();
+      // владелец сам попадает в список админов, чтобы его было видно в счётчике
+      if (isOwner() && !s.exists()) setDoc(doc(db, 'admins', me), { since: Date.now(), owner: true }).catch(() => {});
+      cbs.onMe && cbs.onMe(publicUser(me));
+    }, () => { amAdmin = isOwner(); }));
+  }
+
+  const buyUsername = wrap(async (name) => {
+    name = String(name || '').trim().toLowerCase().replace(/^@/, '');
+    if (!/^[a-z0-9_.]{3,24}$/.test(name)) throw new Error('Юзернейм: 3–24 символа, латиница, цифры, _ и .');
+    await runTransaction(db, async (t) => {
+      const sref = doc(db, 'status', me);
+      const nref = doc(db, 'usernames', name);
+      const [s, n] = await Promise.all([t.get(sref), t.get(nref)]);
+      if (n.exists()) throw new Error('Этот юзернейм уже занят');
+      const st = s.exists() ? s.data() : {};
+      if ((st.lune || 0) < USERNAME_PRICE) throw new Error(`Нужно ${USERNAME_PRICE} LUNE`);
+      t.set(nref, { uid: me });
+      t.update(sref, { lune: st.lune - USERNAME_PRICE, usernames: [...(st.usernames || []), name] });
+    });
+  });
+
+  const adminStats = wrap(async () => {
+    const [u, a] = await Promise.all([getCountFromServer(collection(db, 'users')), getCountFromServer(collection(db, 'admins'))]);
+    return { users: u.data().count, admins: a.data().count };
+  });
+  const adminUsers = wrap(async () => {
+    const [us, sts, ads] = await Promise.all([getDocs(collection(db, 'users')), getDocs(collection(db, 'status')), getDocs(collection(db, 'admins'))]);
+    sts.forEach((d) => statuses.set(d.id, d.data()));
+    const adminIds = new Set(ads.docs.map((d) => d.id));
+    const out = [];
+    us.forEach((d) => { users.set(d.id, d.data()); if (d.data().username) out.push({ ...publicUser(d.id), admin: adminIds.has(d.id), createdAt: d.data().createdAt || 0 }); });
+    return out.sort((a, b) => b.createdAt - a.createdAt);
+  });
+  // patch: { verified, banned, restricted, plusUntil } или { luneDelta }
+  const adminUpdate = wrap(async (uid, patch) => {
+    const sref = doc(db, 'status', uid);
+    await runTransaction(db, async (t) => {
+      const s = await t.get(sref);
+      const st = s.exists() ? s.data() : {};
+      const data = {};
+      for (const k of ['verified', 'banned', 'restricted']) if (typeof patch[k] === 'boolean') data[k] = patch[k];
+      if (typeof patch.plusUntil === 'number') data.plusUntil = patch.plusUntil;
+      if (typeof patch.luneDelta === 'number') data.lune = Math.max(0, Math.round((st.lune || 0) + patch.luneDelta));
+      data.updatedBy = me;
+      t.set(sref, data, { merge: true });
+    });
+  });
+  const setAdmin = wrap(async (uid, on) => {
+    if (on) await setDoc(doc(db, 'admins', uid), { since: Date.now(), by: me });
+    else await deleteDoc(doc(db, 'admins', uid));
+  });
+
   window.XBackend = {
     projectId: firebaseConfig.projectId,
     emulator: !!emu,
@@ -534,6 +683,10 @@
     follow, markActivityRead,
     createPost, deletePost, toggleLike, subscribeComments, addComment,
     openDM, createGroup, subscribeMessages, send, markRead, typing, signal,
+    uploadFile, fileURL, buyUsername, adminStats, adminUsers, adminUpdate, setAdmin,
+    USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT,
     get uid() { return me; },
+    get isAdmin() { return amAdmin || isOwner(); },
+    get isOwner() { return isOwner(); },
   };
 })();

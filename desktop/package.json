@@ -18,7 +18,7 @@
     "appId": "app.xitter.desktop",
     "productName": "Xitter",
     "directories": { "output": "dist" },
-    "files": ["main.js", "package.json"],
+    "files": ["main.js", "preload.js", "package.json"],
     "extraResources": [{ "from": "../web", "to": "web" }],
     "icon": "../web/icons/icon-512.png",
     "win": { "artifactName": "Xitter-${arch}.${ext}" },

@@ -1,6 +1,6 @@
 // Xitter для Windows: окно Electron с веб-версией из папки web.
 // Файлы отдаются по своему адресу app://xitter/, чтобы вход и данные сохранялись между запусками.
-const { app, BrowserWindow, protocol, net, shell, session } = require('electron');
+const { app, BrowserWindow, protocol, net, shell, session, ipcMain, nativeImage } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -18,7 +18,7 @@ function createWindow() {
     width: 1280, height: 820, minWidth: 380, minHeight: 600,
     title: 'Xitter', backgroundColor: '#ffffff', autoHideMenuBar: true,
     icon: path.join(WEB, 'icons', 'icon-512.png'),
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.js') },
   });
   win.webContents.setUserAgent(win.webContents.getUserAgent() + ' XitterApp');
   // внешние ссылки — в обычном браузере
@@ -28,6 +28,13 @@ function createWindow() {
   });
   win.loadURL('app://xitter/index.html');
 }
+
+// значок, выбранный в настройках Xitter Plus
+ipcMain.on('set-icon', (e, url) => {
+  if (!win || e.sender !== win.webContents || !/^data:image\/png;base64,/.test(url)) return;
+  const img = nativeImage.createFromDataURL(url);
+  if (!img.isEmpty()) win.setIcon(img);
+});
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 

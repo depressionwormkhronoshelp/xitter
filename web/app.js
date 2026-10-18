@@ -52,17 +52,64 @@
     const photo = safePhoto(entity && entity.photo);
     return `--c1:${c1};--c2:${c2}${photo ? `;background-image:url('${photo}')` : ''}`;
   }
+  // ---------- оформление Plus: обводка, видео на аватарке, шрифт и эмодзи у ника, галочка ----------
+  const FONTS = { '': 'Обычный', serif: 'С засечками', mono: 'Моно', round: 'Округлый', hand: 'Рукописный', pixel: 'Пиксели', heavy: 'Жирный' };
+  const RINGS = { '': 'Нет', gold: 'Золото', fire: 'Огонь', rainbow: 'Радуга', neon: 'Неон', ice: 'Лёд', ink: 'Чёрная', custom: 'Свой цвет' };
+  const EFFECTS = { '': 'Нет', shine: 'Блик', snow: 'Снег', stars: 'Звёзды', aurora: 'Сияние', glitch: 'Глитч' };
+  const VERIFIED = '<svg class="vbadge" viewBox="0 0 24 24"><title>Подтверждённый аккаунт</title><path d="M12 1.8l2.6 1.9 3.2-.1 1 3 2.6 1.9-1 3 1 3-2.6 1.9-1 3-3.2-.1L12 22.2l-2.6-1.9-3.2.1-1-3-2.6-1.9 1-3-1-3 2.6-1.9 1-3 3.2.1z"/><path class="tick" d="M8 12.3l2.7 2.7 5.5-5.5"/></svg>';
+  const styleOf = (u) => (u && u.style) || {};
+  const okColor = (c) => /^#[0-9a-f]{6}$/i.test(c || '');
+  function nameHTML(u, text) {
+    const s = styleOf(u);
+    const font = s.font && FONTS[s.font] ? ` font-${s.font}` : '';
+    const emoji = typeof s.emoji === 'string' && s.emoji.length <= 8 ? s.emoji : '';
+    return `<span class="uname${font}">${esc(text != null ? text : (u && (u.name || u.title)) || '')}</span>${u && u.verified ? VERIFIED : ''}${emoji ? `<span class="nemoji">${esc(emoji)}</span>` : ''}`;
+  }
+  function decor(entity) {
+    const s = styleOf(entity);
+    let cls = '', css = '';
+    if (s.ring === 'custom' && okColor(s.ringColor)) { cls = ' ring ring-custom'; css = `;--ring:${s.ringColor}`; }
+    else if (s.ring && RINGS[s.ring] && s.ring !== 'custom') cls = ` ring ring-${s.ring}`;
+    const media = s.avatarMedia && s.avatarMedia.id ? s.avatarMedia.id : '';
+    return { cls, css, media };
+  }
   function avatarHTML(entity, cls = '', online = false, attrs = '') {
     const photo = safePhoto(entity && entity.photo);
-    return `<span class="avatar ${cls} ${online ? 'online' : ''} ${photo ? 'photo' : ''}" style="${avatarStyle(entity)}" ${attrs}>${photo ? '' : esc(initials(entity && (entity.title || entity.name)))}<i class="dot"></i></span>`;
+    const d = decor(entity);
+    return `<span class="avatar ${cls} ${online ? 'online' : ''} ${photo ? 'photo' : ''}${d.cls}" style="${avatarStyle(entity)}${d.css}" ${attrs}${d.media ? ` data-media="${esc(d.media)}"` : ''}>${photo ? '' : esc(initials(entity && (entity.title || entity.name)))}<i class="dot"></i></span>`;
   }
   function setAvatar(el, entity, online) {
     const photo = safePhoto(entity && entity.photo);
-    el.setAttribute('style', avatarStyle(entity));
+    const d = decor(entity);
+    el.setAttribute('style', avatarStyle(entity) + d.css);
+    el.className = `${el.className.split(' ').filter((c) => !/^(ring|ring-.*|online|photo|has-media)$/.test(c)).join(' ')}${d.cls}`;
     el.classList.toggle('online', !!online);
     el.classList.toggle('photo', !!photo);
+    if (d.media) el.dataset.media = d.media; else delete el.dataset.media;
+    delete el.dataset.loaded;
     el.innerHTML = `${photo ? '' : esc(initials(entity && (entity.title || entity.name)))}<i class="dot"></i>`;
   }
+  // видео и GIF (аватарки и баннеры) подгружаются из файлов после отрисовки
+  let hydrateTimer = 0;
+  function hydrateMedia() {
+    for (const el of document.querySelectorAll('[data-media]')) {
+      const id = el.dataset.media;
+      if (el.dataset.loaded === id) continue;
+      el.dataset.loaded = id;
+      B.fileURL(id).then((f) => {
+        if (el.dataset.media !== id) return;
+        el.querySelector(':scope > .amedia')?.remove();
+        const vid = /^video\//.test(f.type);
+        const m = document.createElement(vid ? 'video' : 'img');
+        m.className = 'amedia';
+        if (vid) { m.muted = true; m.loop = true; m.autoplay = true; m.playsInline = true; m.setAttribute('playsinline', ''); }
+        m.src = f.url;
+        el.prepend(m);
+        el.classList.add('has-media');
+      }).catch(() => {});
+    }
+  }
+  new MutationObserver(() => { clearTimeout(hydrateTimer); hydrateTimer = setTimeout(hydrateMedia, 30); }).observe(document.body, { childList: true, subtree: true });
 
   const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
   const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
@@ -151,17 +198,47 @@
   }
 
   // ---------- тема ----------
+  // три бесплатные темы (белая, чёрная, оранжевая) и своя с Plus
+  const THEME_DEFAULT = { bg: '#101820', text: '#f2f5f7', ink: '#7c5cff', bubble: '#1e2a36' };
+  function customColors() {
+    try { return { ...THEME_DEFAULT, ...JSON.parse(store.get('themeColors') || '{}') }; } catch { return { ...THEME_DEFAULT }; }
+  }
+  // яркость цвета, чтобы подобрать текст на акценте
+  const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; };
   function applyTheme(t) {
-    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-    else delete document.documentElement.dataset.theme;
+    const root = document.documentElement;
+    if (['light', 'dark', 'orange', 'custom'].includes(t)) root.dataset.theme = t;
+    else delete root.dataset.theme;
+    for (const k of ['--bg', '--text', '--ink', '--on-ink', '--bubble-them', '--scheme-dark']) root.style.removeProperty(k);
+    let bar = '#ffffff';
+    if (t === 'custom') {
+      const c = customColors();
+      root.style.setProperty('--bg', c.bg);
+      root.style.setProperty('--text', c.text);
+      root.style.setProperty('--ink', c.ink);
+      root.style.setProperty('--on-ink', lum(c.ink) > 0.6 ? '#0a0a0a' : '#ffffff');
+      root.style.setProperty('--bubble-them', c.bubble);
+      root.style.colorScheme = lum(c.bg) < 0.5 ? 'dark' : 'light';
+      bar = c.bg;
+      $$('#customColors input').forEach((i) => { i.value = c[i.dataset.var]; });
+    } else root.style.removeProperty('color-scheme');
     $$('#themeSeg button').forEach((b) => b.classList.toggle('active', b.dataset.theme === (t || 'auto')));
-    const dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-    $('meta[name=theme-color]').content = dark ? '#000000' : '#ffffff';
+    $('#customColors').hidden = t !== 'custom';
+    const dark = t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
+    if (t === 'orange') bar = '#fff4ea'; else if (dark) bar = '#000000';
+    $('meta[name=theme-color]').content = bar;
   }
   $$('#themeSeg button').forEach((b) => b.addEventListener('click', () => {
+    if (b.dataset.theme === 'custom' && !(S.me && S.me.plus)) { toast('Своя тема доступна с Xitter Plus'); return; }
     store.set('theme', b.dataset.theme === 'auto' ? null : b.dataset.theme);
     applyTheme(store.get('theme'));
     haptic(5);
+  }));
+  $$('#customColors input').forEach((i) => i.addEventListener('input', () => {
+    const c = customColors();
+    c[i.dataset.var] = i.value;
+    store.set('themeColors', JSON.stringify(c));
+    applyTheme('custom');
   }));
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => applyTheme(store.get('theme')));
 
@@ -316,6 +393,21 @@
     $('#meHandle').textContent = S.me.username ? '@' + S.me.username : '';
     $('#serverInfo').textContent = B.projectId + (B.emulator ? ' (эмулятор)' : '');
     $('#connInfo').textContent = navigator.onLine ? 'в сети' : 'нет интернета';
+    $('#bannedScreen').hidden = !S.me.banned;
+    $('#luneInfo').textContent = `${num(S.me.lune || 0)} ☾`;
+    $('#adminBtn').hidden = !B.isAdmin;
+    if (isOpen('adminPage') && !B.isAdmin) resetStack();
+    renderWallet();
+    renderIconPicker();
+    // Plus закончился: своя тема и иконка возвращаются к обычным
+    if (!S.me.plus && store.get('theme') === 'custom') { store.set('theme', null); applyTheme(null); }
+    if (!S.me.plus && store.get('icon')) { store.set('icon', null); setAppIcon('orange'); }
+  }
+  $('#bannedLogout').addEventListener('click', () => logout());
+  // ограниченный аккаунт может читать, но не писать
+  function canPost() {
+    if (S.me && (S.me.restricted || S.me.banned)) { toast('Ваш аккаунт ограничен администрацией'); return false; }
+    return true;
   }
   addEventListener('online', renderMe);
   addEventListener('offline', renderMe);
@@ -426,7 +518,7 @@
     return `<article class="post" data-post="${p.id}">
       <div class="post-head">
         ${avatarHTML(a, '', false, `data-user="${esc(p.author)}"`)}
-        <button class="who" data-user="${esc(p.author)}"><b>${esc(a.name)}</b><small>@${esc(a.username)} · ${fmtAgo(p.createdAt)}</small></button>
+        <button class="who" data-user="${esc(p.author)}"><b>${nameHTML(a)}</b><small>@${esc(a.username)} · ${fmtAgo(p.createdAt)}</small></button>
         <button class="icon-btn more" data-more aria-label="Ещё"><svg><use href="#i-more"/></svg></button>
       </div>
       ${p.text ? `<p class="post-text" ${opts.full ? '' : 'data-open'}>${esc(p.text)}</p>` : ''}
@@ -606,7 +698,7 @@
       ? S.comments.map((c, i) => {
         const a = user(c.author);
         return `<li class="comment" style="--i:${i}">${avatarHTML(a, 's', false, `data-user="${esc(c.author)}"`)}
-          <div class="c-main"><b data-user="${esc(c.author)}">${esc(a.username || a.name)}</b><time>${fmtAgo(c.createdAt)}</time><p>${esc(c.text)}</p></div></li>`;
+          <div class="c-main"><b data-user="${esc(c.author)}">${nameHTML(a, a.username || a.name)}</b><time>${fmtAgo(c.createdAt)}</time><p>${esc(c.text)}</p></div></li>`;
       }).join('')
       : '<div class="empty"><b>Комментариев нет</b><span>Напишите первый</span></div>';
   }
@@ -615,7 +707,7 @@
     const input = $('#commentInput');
     const text = input.value.trim();
     const p = findPost(S.postId);
-    if (!text || !p) return;
+    if (!text || !p || !canPost()) return;
     input.value = '';
     try {
       await B.addComment(p, text);
@@ -648,6 +740,7 @@
   $('#publishBtn').addEventListener('click', async (e) => {
     const text = $('#postText').value.trim();
     if (!text && !composeImage) { toast('Напишите что-нибудь или добавьте фото'); return; }
+    if (!canPost()) return;
     try {
       await busy(e.currentTarget, () => B.createPost({ text, image: composeImage }));
       closeSheet();
@@ -675,7 +768,7 @@
     const f = following();
     $('#peopleList').innerHTML = users.map((u, i) => `<li class="row" data-user="${esc(u.id)}" style="--i:${i}">
       ${avatarHTML(u, '', u.online)}
-      <div class="row-main"><b>${esc(u.name)}</b><span>@${esc(u.username)}${u.bio ? ' · ' + esc(u.bio) : ''}</span></div>
+      <div class="row-main"><b>${nameHTML(u)}</b><span>@${esc(u.username)}${u.bio ? ' · ' + esc(u.bio) : ''}</span></div>
       <button class="btn-out ${f.has(u.id) ? 'on' : ''}" data-follow="${esc(u.id)}">${f.has(u.id) ? 'Вы подписаны' : 'Подписаться'}</button>
     </li>`).join('');
     $('#peopleEmpty').hidden = users.length > 0;
@@ -718,7 +811,7 @@
   }
   function activityText(a) {
     const u = user(a.from);
-    const name = `<b data-user="${esc(a.from)}">${esc(u.name)}</b>`;
+    const name = `<b data-user="${esc(a.from)}">${nameHTML(u)}</b>`;
     const t = `<time> · ${fmtAgo(a.createdAt)}</time>`;
     if (a.type === 'follow') return `${name} подписался(-ась) на вас${t}`;
     if (a.type === 'like') return `${name} оценил(а) ваш пост${t}`;
@@ -780,7 +873,17 @@
     const btns = isMe
       ? `<button class="btn-soft" id="editProfileBtn">Редактировать профиль</button><button class="btn-soft" data-chats>Сообщения</button>`
       : `<button class="btn-out ${f.has(u.id) ? 'on' : ''}" data-follow="${esc(u.id)}">${f.has(u.id) ? 'Вы подписаны' : 'Подписаться'}</button><button class="btn-soft" data-message="${esc(u.id)}">Сообщение</button>`;
-    return `<div class="profile">
+    const s = styleOf(u);
+    const banner = s.banner && s.banner.id
+      ? `<div class="banner fx-${esc(EFFECTS[s.effect] ? s.effect || 'none' : 'none')}" data-media="${esc(s.banner.id)}"><i class="fx"></i></div>` : '';
+    const extra = (u.usernames || []).map((n) => ' · @' + esc(n)).join('');
+    const badges = [
+      u.plus ? '<span class="plus-badge">Plus</span>' : '',
+      isMe ? `<button class="lune-chip" data-wallet>☾ ${num(u.lune || 0)} LUNE</button>` : '',
+    ].join('');
+    const music = u.music && u.music.id
+      ? `<button class="music-card ${profileMusic.id === u.music.id && profileMusic.playing ? 'playing' : ''}" data-music="${esc(u.music.id)}"><span class="mplay"><svg><use href="#i-${profileMusic.id === u.music.id && profileMusic.playing ? 'pause' : 'play'}"/></svg></span><span class="mtext"><b>${esc(u.music.title || 'Трек')}</b><small>Музыка профиля</small></span><span class="eq"><i></i><i></i><i></i><i></i></span></button>` : '';
+    return `${banner}<div class="profile ${banner ? 'has-banner' : ''}">
       <div class="profile-top">
         ${avatarHTML(u, 'xl', !isMe && u.online)}
         <div class="stats">
@@ -789,9 +892,11 @@
           <div><b>${num((u.following || []).length)}</b><span>${plural((u.following || []).length, 'подписка', 'подписки', 'подписок')}</span></div>
         </div>
       </div>
-      <h2>${esc(u.name)}</h2>
-      <div class="handle">@${esc(u.username)}${isMe ? '' : ' · ' + esc(fmtSeen(u))}</div>
+      <h2>${nameHTML(u)}</h2>
+      <div class="handle">@${esc(u.username)}${extra}${isMe ? '' : ' · ' + esc(fmtSeen(u))}</div>
+      ${badges ? `<div class="badges">${badges}</div>` : ''}
       ${u.bio ? `<p class="bio">${esc(u.bio)}</p>` : ''}
+      ${music}
       <div class="profile-btns">${btns}</div>
     </div>
     <div class="profile-posts"></div>
@@ -840,6 +945,9 @@
       if (m) { e.stopPropagation(); messageUser(m.dataset.message); return; }
       if (e.target.closest('#editProfileBtn')) { openEdit(); return; }
       if (e.target.closest('[data-chats]')) { openChats(); return; }
+      if (e.target.closest('[data-wallet]')) { openWallet(); return; }
+      const mu = e.target.closest('[data-music]');
+      if (mu) { toggleProfileMusic(mu.dataset.music); return; }
       const g = e.target.closest('[data-go]');
       if (g) switchTab(g.dataset.go);
     }, true);
@@ -854,6 +962,10 @@
   function openEdit() {
     editColors = S.me.colors;
     editPhoto = S.me.photo || '';
+    editStyle = JSON.parse(JSON.stringify(S.me.style || {}));
+    editMusic = S.me.music || null;
+    musicChanged = false;
+    renderPlusEdit();
     $('#setName').value = S.me.name;
     $('#setBio').value = S.me.bio || '';
     renderEditAvatar();
@@ -862,7 +974,7 @@
   }
   function renderEditAvatar() {
     const wrap = $('.edit-avatar');
-    setAvatar($('#editAvatar'), { ...S.me, colors: editColors, photo: editPhoto });
+    setAvatar($('#editAvatar'), { ...S.me, colors: editColors, photo: editPhoto, style: editStyle });
     let btns = $('.edit-photo-btns', wrap);
     if (!btns) {
       btns = document.createElement('div');
@@ -889,7 +1001,12 @@
   });
   $('#saveProfile').addEventListener('click', async () => {
     try {
-      S.me = await B.updateMe({ name: $('#setName').value, bio: $('#setBio').value, colors: editColors, photo: editPhoto });
+      if (S.me.plus) editStyle.emoji = firstGrapheme($('#setEmoji').value.trim());
+      S.me = await B.updateMe({
+        name: $('#setName').value, bio: $('#setBio').value, colors: editColors, photo: editPhoto,
+        ...(S.me.plus ? { style: editStyle } : {}),
+        ...(musicChanged ? { music: editMusic } : {}),
+      });
       renderMe();
       schedule();
       closeSheet();
@@ -898,6 +1015,351 @@
     } catch (e) { toast(e.message); }
   });
   $('#logoutBtn').addEventListener('click', () => logout());
+
+
+  // ---------- оформление профиля (Plus) и музыка ----------
+  let editStyle = {}, editMusic = null, musicChanged = false;
+  const firstGrapheme = (v) => {
+    if (!v) return '';
+    try { return [...new Intl.Segmenter('ru', { granularity: 'grapheme' }).segment(v)][0].segment.slice(0, 8); } catch { return [...v][0] || ''; }
+  };
+  const fmtSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1).replace('.0', '') + ' МБ' : Math.max(1, Math.round(n / 1024)) + ' КБ');
+  const anyFile = (accept) => { const i = $('#anyFile'); i.accept = accept || ''; return pickFile(i); };
+  function chipsHTML(map, cur) {
+    return Object.entries(map).map(([k, v]) => `<button type="button" data-k="${esc(k)}" class="${(cur || '') === k ? 'active' : ''}">${esc(v)}</button>`).join('');
+  }
+  function mediaEditHTML(item, label, kind) {
+    return item && item.id
+      ? `<span class="media-name">${esc(item.title || label)}</span><button type="button" class="btn-soft small" data-medit="${kind}">Заменить</button><button type="button" class="btn-soft small danger" data-mdel="${kind}">Убрать</button>`
+      : `<button type="button" class="btn-soft small" data-medit="${kind}">Выбрать файл</button>`;
+  }
+  function renderPlusEdit() {
+    const plus = !!S.me.plus;
+    $('#plusEdit').classList.toggle('locked', !plus);
+    $('#plusLock').hidden = plus;
+    $('#effectChips').innerHTML = chipsHTML(EFFECTS, editStyle.effect);
+    $('#ringChips').innerHTML = chipsHTML(RINGS, editStyle.ring) + `<input type="color" id="ringColor" value="${okColor(editStyle.ringColor) ? editStyle.ringColor : '#ff7a1a'}" ${editStyle.ring === 'custom' ? '' : 'hidden'} />`;
+    $('#fontChips').innerHTML = Object.entries(FONTS).map(([k, v]) => `<button type="button" data-k="${k}" class="font-${k || 'none'} ${(editStyle.font || '') === k ? 'active' : ''}">${v}</button>`).join('');
+    $('#setEmoji').value = editStyle.emoji || '';
+    $('#bannerEdit').innerHTML = mediaEditHTML(editStyle.banner, 'Баннер', 'banner');
+    $('#avMediaEdit').innerHTML = mediaEditHTML(editStyle.avatarMedia, 'Видео или GIF', 'avatar');
+    $('#musicEdit').innerHTML = mediaEditHTML(editMusic, 'Трек', 'music');
+    $$('#plusEdit input, #plusEdit button').forEach((x) => { x.disabled = !plus; });
+  }
+  function onChip(boxSel, key) {
+    $(boxSel).addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-k]');
+      if (!b) return;
+      editStyle[key] = b.dataset.k;
+      renderPlusEdit();
+      renderEditAvatar();
+      haptic(5);
+    });
+  }
+  onChip('#effectChips', 'effect');
+  onChip('#ringChips', 'ring');
+  onChip('#fontChips', 'font');
+  $('#ringChips').addEventListener('input', (e) => { if (e.target.id === 'ringColor') { editStyle.ringColor = e.target.value; renderEditAvatar(); } });
+  async function uploadPicked(file, btn) {
+    const label = btn ? btn.textContent : '';
+    try {
+      return await B.uploadFile(file, (p) => { if (btn) btn.textContent = `Загрузка ${Math.round(p * 100)}%`; });
+    } finally { if (btn) btn.textContent = label; }
+  }
+  $('#editSheet').addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-mdel]');
+    if (del) {
+      const k = del.dataset.mdel;
+      if (k === 'music') { editMusic = null; musicChanged = true; }
+      else if (k === 'banner') delete editStyle.banner;
+      else delete editStyle.avatarMedia;
+      renderPlusEdit(); renderEditAvatar();
+      return;
+    }
+    const ed = e.target.closest('[data-medit]');
+    if (!ed) return;
+    const k = ed.dataset.medit;
+    const f = await anyFile(k === 'music' ? 'audio/*' : k === 'banner' ? 'image/*' : 'image/gif,video/*');
+    if (!f) return;
+    if (k === 'avatar' && !/^(video\/|image\/gif)/.test(f.type)) { toast('Нужно видео или GIF'); return; }
+    if (k === 'banner' && !/^image\//.test(f.type)) { toast('Нужно фото или GIF'); return; }
+    if (k === 'music' && !/^audio\//.test(f.type)) { toast('Нужен аудиофайл'); return; }
+    try {
+      const up = await uploadPicked(f, ed);
+      if (k === 'music') { editMusic = { id: up.id, title: f.name.replace(/\.[^.]+$/, '').slice(0, 80), size: up.size }; musicChanged = true; }
+      else if (k === 'banner') editStyle.banner = { id: up.id, type: up.type };
+      else editStyle.avatarMedia = { id: up.id, type: up.type };
+      renderPlusEdit(); renderEditAvatar();
+    } catch (err) { toast(err.message); }
+  });
+
+  // музыка профиля: один плеер
+  const profileMusic = { audio: new Audio(), id: null, playing: false };
+  profileMusic.audio.addEventListener('ended', () => { profileMusic.playing = false; schedule(); });
+  profileMusic.audio.addEventListener('pause', () => { profileMusic.playing = false; schedule(); });
+  profileMusic.audio.addEventListener('play', () => { profileMusic.playing = true; schedule(); });
+  async function toggleProfileMusic(id) {
+    const a = profileMusic.audio;
+    if (profileMusic.id === id) { a.paused ? a.play().catch(() => {}) : a.pause(); return; }
+    Voice.stop();
+    a.pause();
+    profileMusic.id = id;
+    try {
+      toast('Загружаю трек…');
+      const f = await B.fileURL(id);
+      if (profileMusic.id !== id) return;
+      a.src = f.url;
+      await a.play();
+      $('#toast').classList.remove('show');
+    } catch (err) { toast(err.message || 'Не удалось включить трек'); }
+  }
+
+  // ---------- LUNE: кошелёк и юзернеймы ----------
+  function renderWallet() {
+    if (!S.me) return;
+    $('#walletBalance').textContent = num(S.me.lune || 0);
+    $('#myUsernames').innerHTML = (S.me.usernames || []).length
+      ? S.me.usernames.map((n) => `<span class="chip-static">@${esc(n)}</span>`).join('')
+      : '<span class="fine">Пока нет</span>';
+    $('#buyNameBtn').textContent = `Купить за ${B.USERNAME_PRICE}`;
+  }
+  function openWallet() { renderWallet(); openSheet('walletSheet'); }
+  $('#walletBtn').addEventListener('click', openWallet);
+  $('#buyNameBtn').addEventListener('click', async (e) => {
+    const name = $('#buyName').value;
+    if ((S.me.lune || 0) < B.USERNAME_PRICE) { toast(`Нужно ${B.USERNAME_PRICE} LUNE`); return; }
+    try {
+      await busy(e.currentTarget, () => B.buyUsername(name));
+      $('#buyName').value = '';
+      toast('Юзернейм куплен');
+      haptic(12);
+    } catch (err) { toast(err.message); }
+  });
+
+  // ---------- иконка приложения (Plus) ----------
+  const ICONS = {
+    orange: ['#FFC07A', '#FF7A1A', '#FF4D2E', '#ffffff'],
+    dark: ['#48484a', '#1c1c1e', '#000000', '#ffffff'],
+    light: ['#ffffff', '#f4f4f6', '#dcdce0', '#0a0a0a'],
+    sunset: ['#FFB199', '#FF0844', '#8E2DE2', '#ffffff'],
+    mint: ['#C2F7DE', '#1FD1A5', '#0F8B7E', '#ffffff'],
+    ocean: ['#9BE7FF', '#4FACFE', '#1E3C72', '#ffffff'],
+  };
+  const ICON_NAMES = { orange: 'Оранжевая', dark: 'Чёрная', light: 'Белая', sunset: 'Закат', mint: 'Мята', ocean: 'Океан' };
+  function iconSVG(name) {
+    const [a, b, c, g] = ICONS[name] || ICONS.orange;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset=".5" stop-color="${b}"/><stop offset="1" stop-color="${c}"/></linearGradient><radialGradient id="hl" cx=".3" cy=".1" r=".7"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><rect width="512" height="512" fill="url(#bg)"/><rect width="512" height="512" fill="url(#hl)"/><path d="M150 140h72l34 56 34-56h72l-70 116 74 116h-72l-38-62-38 62h-72l74-116z" fill="${g}" fill-opacity=".92"/></svg>`;
+  }
+  const iconURL = (name) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(iconSVG(name));
+  function setAppIcon(name) {
+    if (!ICONS[name]) name = 'orange';
+    const url = iconURL(name);
+    for (const sel of ['link[rel=icon]', 'link[rel=apple-touch-icon]']) { const l = $(sel); if (l) l.href = url; }
+    // Android: переключение значка на рабочем столе; Windows: значок окна и панели задач
+    try { window.XitterNative && window.XitterNative.setIcon(name); } catch {}
+    if (window.xitterDesktop) {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 256;
+        c.getContext('2d').drawImage(img, 0, 0, 256, 256);
+        try { window.xitterDesktop.setIcon(c.toDataURL('image/png')); } catch {}
+      };
+      img.src = url;
+    }
+  }
+  function renderIconPicker() {
+    const cur = store.get('icon') || 'orange';
+    $('#iconPicker').innerHTML = Object.keys(ICONS).map((k) => `<button type="button" data-icon="${k}" class="${k === cur ? 'active' : ''}" aria-label="${ICON_NAMES[k]}"><img src="${iconURL(k)}" alt="" /><span>${ICON_NAMES[k]}</span></button>`).join('');
+  }
+  $('#iconPicker').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-icon]');
+    if (!b) return;
+    if (!(S.me && S.me.plus)) { toast('Смена иконки доступна с Xitter Plus'); return; }
+    store.set('icon', b.dataset.icon === 'orange' ? null : b.dataset.icon);
+    setAppIcon(b.dataset.icon);
+    renderIconPicker();
+    toast(window.XitterNative ? 'Иконка сменится на рабочем столе через пару секунд' : 'Иконка изменена');
+    haptic(8);
+  });
+
+  // ---------- стикеры ----------
+  const STICKERS = [
+    { pack: 'Эмоции', items: [
+      ['love', '😍', 'beat'], ['lol', '😂', 'shake'], ['cool', '😎', 'float'], ['cry', '😭', 'wobble'], ['wow', '🤯', 'pop'], ['angry', '😡', 'shake'],
+      ['party', '🥳', 'bounce'], ['think', '🤔', 'tilt'], ['sleep', '😴', 'float'], ['kiss', '😘', 'beat'], ['halo', '😇', 'float'], ['skull', '💀', 'wobble'],
+    ] },
+    { pack: 'Звери', items: [
+      ['fox', '🦊', 'bounce'], ['cat', '🐱', 'tilt'], ['dog', '🐶', 'wobble'], ['frog', '🐸', 'bounce'], ['panda', '🐼', 'float'], ['unicorn', '🦄', 'float'],
+    ] },
+    { pack: 'Фразы', items: [
+      ['t-hi', 'ПРИВЕТ', 'text'], ['t-ok', 'ОК', 'text'], ['t-thx', 'СПАСИБО', 'text'], ['t-fire', 'ОГОНЬ', 'text'], ['t-wait', 'ЖДУ', 'text'], ['t-lol', 'АХАХА', 'text'],
+      ['t-love', 'ЛЮБЛЮ', 'text'], ['t-gn', 'СПОКОЙНОЙ НОЧИ', 'text'],
+    ] },
+    { pack: 'Разное', items: [
+      ['fire', '🔥', 'beat'], ['heart', '❤️', 'beat'], ['rocket', '🚀', 'fly'], ['moon', '🌙', 'tilt'], ['star', '⭐', 'spin'], ['100', '💯', 'pop'],
+    ] },
+  ];
+  const STICKER_MAP = new Map(STICKERS.flatMap((p) => p.items.map((it) => [it[0], it])));
+  function stickerHTML(id, fallback) {
+    const it = STICKER_MAP.get(id);
+    if (!it) return `<div class="bubble emoji-only">${esc(fallback || '')}</div>`;
+    return it[2] === 'text'
+      ? `<div class="sticker text-sticker st-${esc(id)}"><span>${esc(it[1])}</span></div>`
+      : `<div class="sticker anim-${it[2]}"><span>${it[1]}</span></div>`;
+  }
+  $('#stickerPop').innerHTML = STICKERS.map((p) => `<div class="sp-title">${esc(p.pack)}</div><div class="sp-grid">${p.items.map((it) => `<button type="button" data-sticker="${it[0]}">${it[2] === 'text' ? `<span class="sp-text">${esc(it[1])}</span>` : it[1]}</button>`).join('')}</div>`).join('');
+  $('#stickerBtn').addEventListener('click', () => { $('#emojiPop').hidden = true; $('#stickerPop').hidden = !$('#stickerPop').hidden; haptic(5); });
+  $('#stickerPop').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sticker]');
+    if (!b || !S.current) return;
+    const it = STICKER_MAP.get(b.dataset.sticker);
+    sendText(S.current, it[2] === 'text' ? it[1] : it[1], { kind: 'sticker', sticker: it[0] });
+    $('#stickerPop').hidden = true;
+  });
+
+  // ---------- файлы в чате: до 20 МБ, с Plus до 50 МБ ----------
+  $('#fileBtn').addEventListener('click', async () => {
+    const chatId = S.current;
+    if (!canPost()) return;
+    const f = await anyFile('');
+    if (!f || !chatId) return;
+    const bar = $('#uploadBar');
+    $('#uploadText').textContent = `${f.name} · ${fmtSize(f.size)}`;
+    $('#uploadFill').style.width = '0%';
+    bar.hidden = false;
+    try {
+      const up = await B.uploadFile(f, (p) => { $('#uploadFill').style.width = Math.round(p * 100) + '%'; });
+      sendText(chatId, '📎 ' + up.name, { kind: 'file', file: up });
+    } catch (e) { toast(e.message); }
+    bar.hidden = true;
+  });
+  async function openFile(id, el) {
+    el.classList.add('loading');
+    try {
+      const f = await B.fileURL(id);
+      if (/^image\//.test(f.type)) openViewer(f.url);
+      else if (/^video\//.test(f.type)) openViewer(f.url, true);
+      else if (/^audio\//.test(f.type)) { profileMusic.id = null; toggleProfileMusic(id); }
+      else {
+        const a = document.createElement('a');
+        a.href = f.url; a.download = f.name;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => a.remove(), 1000);
+      }
+    } catch (e) { toast(e.message); }
+    el.classList.remove('loading');
+  }
+
+  // ---------- админ-панель ----------
+  const ADMIN = { tab: 'overview', users: [], stats: null, sel: null };
+  function openAdmin() {
+    if (!B.isAdmin) return;
+    closeSheet();
+    push('adminPage');
+    loadAdmin();
+  }
+  $('#adminBtn').addEventListener('click', openAdmin);
+  $('#adminRefresh').addEventListener('click', () => loadAdmin());
+  async function loadAdmin() {
+    try {
+      const [stats, users] = await Promise.all([B.adminStats(), B.adminUsers()]);
+      ADMIN.stats = stats; ADMIN.users = users;
+      renderAdmin();
+    } catch (e) { toast(e.message); }
+  }
+  function renderAdmin() {
+    const st = ADMIN.stats || { users: 0, admins: 0 };
+    const us = ADMIN.users;
+    const cards = [
+      ['Пользователи', st.users], ['Админы', st.admins],
+      ['С Plus', us.filter((u) => u.plus).length], ['С галочкой', us.filter((u) => u.verified).length],
+      ['Забанены', us.filter((u) => u.banned).length], ['Ограничены', us.filter((u) => u.restricted).length],
+      ['LUNE у всех', us.reduce((n, u) => n + (u.lune || 0), 0)], ['В сети', us.filter((u) => u.online).length],
+    ];
+    $('#adminStats').innerHTML = cards.map(([t, v]) => `<div class="stat"><b>${num(v)}</b><span>${t}</span></div>`).join('');
+    $('#adminOverview').hidden = ADMIN.tab !== 'overview';
+    $('#adminUsersBox').hidden = ADMIN.tab !== 'users';
+    const q = $('#adminSearch').value.trim().toLowerCase().replace(/^@/, '');
+    const list = us.filter((u) => !q || u.username.includes(q) || u.name.toLowerCase().includes(q) || (u.usernames || []).some((n) => n.includes(q)));
+    $('#adminList').innerHTML = list.map((u, i) => `<li class="row" data-auid="${esc(u.id)}" style="--i:${Math.min(i, 12)}">
+      ${avatarHTML(u, '', u.online)}
+      <div class="row-main"><b>${nameHTML(u)}</b><span>@${esc(u.username)} · ☾ ${num(u.lune || 0)}</span></div>
+      <span class="tags">${u.admin ? '<i class="tag">админ</i>' : ''}${u.plus ? '<i class="tag plus">Plus</i>' : ''}${u.banned ? '<i class="tag red">бан</i>' : ''}${u.restricted ? '<i class="tag amber">огр.</i>' : ''}</span>
+    </li>`).join('') || '<div class="empty"><b>Никого не нашли</b></div>';
+    if (ADMIN.sel) renderAdminUser();
+  }
+  $$('#adminSeg button').forEach((b) => b.addEventListener('click', () => {
+    ADMIN.tab = b.dataset.admin;
+    $$('#adminSeg button').forEach((x) => x.classList.toggle('active', x === b));
+    renderAdmin();
+  }));
+  $('#adminSearch').addEventListener('input', () => renderAdmin());
+  $('#adminList').addEventListener('click', (e) => {
+    const r = e.target.closest('[data-auid]');
+    if (!r) return;
+    ADMIN.sel = r.dataset.auid;
+    renderAdminUser();
+    openSheet('adminUserSheet');
+  });
+  const fmtDate = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  function renderAdminUser() {
+    const u = ADMIN.users.find((x) => x.id === ADMIN.sel);
+    if (!u) return;
+    const forever = u.plusUntil > Date.now() + 50 * 365 * 864e5;
+    const toggle = (k, label, on, hint) => `<div class="group-row"><span>${label}${hint ? `<small>${hint}</small>` : ''}</span><button class="switch ${on ? 'on' : ''}" data-tog="${k}" aria-label="${label}"><i></i></button></div>`;
+    $('#adminUserBody').innerHTML = `
+      <div class="au-head">${avatarHTML(u, 'l', u.online)}<div><b>${nameHTML(u)}</b><small>@${esc(u.username)}${(u.usernames || []).map((n) => ' · @' + esc(n)).join('')}</small></div></div>
+      <div class="group">
+        ${toggle('verified', 'Верификация', u.verified, 'галочка у имени')}
+        ${toggle('restricted', 'Ограничить', u.restricted, 'не может писать посты, комментарии и сообщения')}
+        ${toggle('banned', 'Забанить', u.banned, 'аккаунт заблокирован полностью')}
+      </div>
+      <div class="group pad">
+        <div class="au-line"><span>LUNE</span><b>☾ ${num(u.lune || 0)}</b></div>
+        <div class="buy-row"><input class="input" id="luneAmount" type="number" min="1" step="1" value="100" /><button class="btn-black small" data-lune="1">Выдать</button><button class="btn-soft small" data-lune="-1">Забрать</button></div>
+      </div>
+      <div class="group pad">
+        <div class="au-line"><span>Xitter Plus</span><b>${u.plus ? (forever ? 'навсегда' : 'до ' + fmtDate(u.plusUntil)) : 'нет'}</b></div>
+        <div class="btn-wrap"><button class="btn-soft small" data-plus="30">+30 дней</button><button class="btn-soft small" data-plus="365">+1 год</button><button class="btn-soft small" data-plus="forever">Навсегда</button>${u.plus ? '<button class="btn-soft small danger" data-plus="off">Забрать</button>' : ''}</div>
+      </div>
+      ${B.isOwner && u.id !== S.me.id ? `<button class="btn-soft ${u.admin ? 'danger' : ''}" data-setadmin="${u.admin ? 0 : 1}">${u.admin ? 'Убрать из админов' : 'Сделать админом'}</button>` : ''}
+      <button class="btn-soft" data-openprofile>Открыть профиль</button>`;
+  }
+  async function adminDo(fn, okText) {
+    try { await fn(); toast(okText); haptic(10); await loadAdmin(); } catch (e) { toast(e.message); }
+  }
+  $('#adminUserBody').addEventListener('click', (e) => {
+    const u = ADMIN.users.find((x) => x.id === ADMIN.sel);
+    if (!u) return;
+    const t = e.target.closest('[data-tog]');
+    if (t) {
+      const k = t.dataset.tog, on = !u[k];
+      t.classList.toggle('on', on);
+      const words = { verified: ['Галочка выдана', 'Галочка снята'], restricted: ['Аккаунт ограничен', 'Ограничение снято'], banned: ['Пользователь забанен', 'Бан снят'] }[k];
+      adminDo(() => B.adminUpdate(u.id, { [k]: on }), on ? words[0] : words[1]);
+      return;
+    }
+    const l = e.target.closest('[data-lune]');
+    if (l) {
+      const n = Math.round(Math.abs(+$('#luneAmount').value || 0));
+      if (!n) { toast('Введите количество'); return; }
+      const d = n * +l.dataset.lune;
+      adminDo(() => B.adminUpdate(u.id, { luneDelta: d }), d > 0 ? `Выдано ${n} LUNE` : `Забрано ${Math.min(n, u.lune || 0)} LUNE`);
+      return;
+    }
+    const pl = e.target.closest('[data-plus]');
+    if (pl) {
+      const v = pl.dataset.plus;
+      const base = Math.max(Date.now(), u.plusUntil || 0);
+      const until = v === 'off' ? 0 : v === 'forever' ? 4102444800000 : base + +v * 864e5;
+      adminDo(() => B.adminUpdate(u.id, { plusUntil: until }), v === 'off' ? 'Plus забран' : 'Plus выдан');
+      return;
+    }
+    const sa = e.target.closest('[data-setadmin]');
+    if (sa) { adminDo(() => B.setAdmin(u.id, sa.dataset.setadmin === '1'), sa.dataset.setadmin === '1' ? 'Теперь админ' : 'Больше не админ'); return; }
+    if (e.target.closest('[data-openprofile]')) { closeSheet(); setTimeout(() => openUser(u.id), 200); }
+  });
 
   // ---------- шторки ----------
   let openSheetId = null;
@@ -963,12 +1425,19 @@
   }
   $('#asCancel').addEventListener('click', closeActions);
 
-  function openViewer(src) {
+  function openViewer(src, video) {
     const v = $('#viewer');
-    $('img', v).src = src;
+    const vid = $('video', v), img = $('img', v);
+    img.hidden = !!video; vid.hidden = !video;
+    if (video) { vid.src = src; vid.play().catch(() => {}); } else img.src = src;
     v.hidden = false;
   }
-  $('#viewer').addEventListener('click', () => { $('#viewer').hidden = true; });
+  $('#viewer').addEventListener('click', (e) => {
+    if (e.target.tagName === 'VIDEO') return;
+    const vid = $('#viewer video');
+    vid.pause(); vid.removeAttribute('src');
+    $('#viewer').hidden = true;
+  });
 
   // ---------- чаты ----------
   function onChats(chats, first) {
@@ -1013,8 +1482,8 @@
       if (typing) preview = `<span class="typing">${c.type === 'group' ? esc(typing.name) + ' печатает…' : 'печатает…'}</span>`;
       else if (!last && other) preview = esc(fmtSeen(other));
       return `<li class="row ${c.unread ? 'unread' : ''}" data-id="${esc(c.id)}" style="--i:${i}">
-        ${avatarHTML(c, 'l', other && other.online)}
-        <div class="row-main"><b>${esc(c.title)}</b><p>${preview}${last && !typing ? ` <time>· ${fmtAgo(last.ts)}</time>` : ''}</p></div>
+        ${avatarHTML(other || c, 'l', other && other.online)}
+        <div class="row-main"><b>${other ? nameHTML(other) : esc(c.title)}</b><p>${preview}${last && !typing ? ` <time>· ${fmtAgo(last.ts)}</time>` : ''}</p></div>
         ${c.unread ? '<i class="udot"></i>' : ''}
       </li>`;
     }).join('');
@@ -1083,9 +1552,9 @@
   function renderChatHeader() {
     const chat = S.chats.get(S.current);
     if (!chat) return;
-    $('#chatTitle').textContent = chat.title;
     const other = chat.type === 'dm' ? otherMember(chat) : null;
-    setAvatar($('#chatAvatar'), chat, other && other.online);
+    $('#chatTitle').innerHTML = other ? nameHTML(other) : esc(chat.title);
+    setAvatar($('#chatAvatar'), other || chat, other && other.online);
     const st = $('#chatStatus');
     const typing = isTyping(chat.id);
     st.classList.toggle('live', !!typing || !!(other && other.online));
@@ -1140,6 +1609,11 @@
     return out;
   }
   function bubbleHTML(m) {
+    if (m.kind === 'sticker') return stickerHTML(m.sticker, m.text);
+    if (m.kind === 'file' && m.file && m.file.id) {
+      const f = m.file;
+      return `<div class="bubble file-bubble" data-file="${esc(f.id)}"><span class="ficon"><svg><use href="#i-file"/></svg></span><span class="fmeta"><b>${esc(f.name)}</b><small>${fmtSize(f.size)} · ${/^(video|audio|image)\//.test(f.type) ? 'открыть' : 'скачать'}</small></span></div>`;
+    }
     if (m.kind === 'image' && safePhoto(m.image)) return `<div class="bubble img-bubble"><img src="${m.image}" alt="Фото" data-view /></div>`;
     if (m.kind === 'voice' && /^data:audio\//.test(m.audio || '')) {
       return `<div class="bubble voice" data-voice="${esc(m.id)}"><button class="vplay" aria-label="Слушать"><svg><use href="#i-play"/></svg></button><span class="wave">${waveBars(m.id)}</span><time>${fmtDur(m.dur || 0)}</time></div>`;
@@ -1197,6 +1671,8 @@
     if (img) { openViewer(img.src); return; }
     const v = e.target.closest('[data-voice]');
     if (v) { Voice.toggle(v.dataset.voice); return; }
+    const fl = e.target.closest('[data-file]');
+    if (fl) { openFile(fl.dataset.file, fl); return; }
     const pr = e.target.closest('[data-profile]');
     if (pr) openUser(pr.dataset.profile);
   });
@@ -1268,6 +1744,7 @@
     input.focus();
   });
   function sendText(chatId, text, extra) {
+    if (!canPost()) return;
     if (S.current === chatId) { const box = $('#messages'); box.scrollTop = box.scrollHeight; }
     B.send(chatId, text, extra);
     haptic(8);
@@ -1275,7 +1752,7 @@
 
   // эмодзи
   $('#emojiPop').innerHTML = EMOJI.map((e) => `<button type="button">${e}</button>`).join('');
-  $('#emojiBtn').addEventListener('click', () => { $('#emojiPop').hidden = !$('#emojiPop').hidden; haptic(5); });
+  $('#emojiBtn').addEventListener('click', () => { $('#stickerPop').hidden = true; $('#emojiPop').hidden = !$('#emojiPop').hidden; haptic(5); });
   $('#emojiPop').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -1283,7 +1760,7 @@
     syncComposer();
     haptic(4);
   });
-  $('#messages').addEventListener('pointerdown', () => { $('#emojiPop').hidden = true; });
+  $('#messages').addEventListener('pointerdown', () => { $('#emojiPop').hidden = true; $('#stickerPop').hidden = true; });
 
   // фото в чат
   $('#imgBtn').addEventListener('click', async () => {
@@ -1365,7 +1842,7 @@
       $('#sheetList').innerHTML = users.length
         ? users.map((u, i) => `<li class="row ${picked.has(u.id) ? 'picked' : ''}" data-uid="${esc(u.id)}" style="--i:${i}">
             ${avatarHTML(u, '', u.online)}
-            <div class="row-main"><b>${esc(u.name)}</b><span>@${esc(u.username)}</span></div>
+            <div class="row-main"><b>${nameHTML(u)}</b><span>@${esc(u.username)}</span></div>
             <span class="pick" ${sheetMode === 'group' ? '' : 'hidden'}><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
           </li>`).join('')
         : '<div class="empty"><b>Никого нет</b><span>Друзья появятся здесь, когда зарегистрируются в Xitter</span></div>';
@@ -1794,6 +2271,7 @@
   // ---------- старт ----------
   initAuth();
   applyTheme(store.get('theme'));
+  if (store.get('icon')) setAppIcon(store.get('icon'));
   B.onAuth((res) => {
     if (!res) { if (!S.started) showAuth(); return; }
     if (res.error) { if (!S.started) showAuth('stepEmail', res.error); return; }
