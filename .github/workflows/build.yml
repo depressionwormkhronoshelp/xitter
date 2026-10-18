@@ -153,7 +153,7 @@ jobs:
           set +e
           sleep 5
           for u in https://x.lozhka.fun/ http://x.lozhka.fun/ https://x.lozhka.fun/backend.js; do
-            code=$(curl -sSL --max-time 20 -o page.out -w "%{http_code}" "$u" 2>err.txt)
+            code=$(curl -ksSL --max-time 20 -o page.out -w "%{http_code}" "$u" 2>err.txt)
             title=$(grep -o "<title>[^<]*</title>" page.out 2>/dev/null | head -1)
             echo "::notice title=$u::HTTP $code $title $(head -c 150 err.txt) | $(head -c 100 page.out | tr -d '\n\r')"
           done
