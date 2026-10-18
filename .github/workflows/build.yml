@@ -130,7 +130,7 @@ jobs:
       FTP_SERVER: ${{ secrets.FTP_SERVER }}
       FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
       FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      FTP_DIR: ${{ secrets.FTP_DIR }}
+      FTP_DIR: ${{ secrets.FTP_DIR || '/www/x.lozhka.fun' }}
     steps:
       - uses: actions/checkout@v5
         if: env.FTP_SERVER != ''
@@ -144,7 +144,7 @@ jobs:
         run: |
           sudo apt-get install -y lftp >/dev/null
           # файлы только добавляются и обновляются, чужие файлы на хостинге не удаляются
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_SERVER" -e "set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 2; mirror -R --verbose web ${FTP_DIR:-/}; bye"
+          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" "$FTP_SERVER" -e "set ftp:ssl-allow yes; set ssl:verify-certificate no; set net:max-retries 2; set net:timeout 30; pwd; cd $FTP_DIR || echo 'Папки нет, загружаю в домашнюю папку FTP'; pwd; mirror -R --verbose web .; ls; bye"
       - name: Пропуск
         if: env.FTP_SERVER == ''
         run: echo "Секреты FTP не заданы, выкладка на хостинг пропущена"
