@@ -14,7 +14,7 @@
   const {
     initializeApp,
     getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, connectAuthEmulator, deleteUser,
-    GoogleAuthProvider, OAuthProvider, signInWithPopup,
+    GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithCredential,
     initializeFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, deleteField,
     collection, query, where, orderBy, limit, limitToLast, onSnapshot, increment, writeBatch, runTransaction,
     arrayUnion, arrayRemove, serverTimestamp, getCountFromServer, Timestamp,
@@ -177,7 +177,13 @@
   const signInWith = wrap(async (provider) => {
     const p = provider === 'apple' ? new OAuthProvider('apple.com') : new GoogleAuthProvider();
     if (provider === 'apple') { p.addScope('email'); p.addScope('name'); }
-    const cred = await signInWithPopup(auth, p);
+    const desktop = provider === 'google' && window.xitterDesktop && window.xitterDesktop.googleSignIn;
+    let cred;
+    if (desktop) {
+      // приложение для ПК: вход проходит в системном браузере, сюда приходит только токен Google
+      const idToken = await window.xitterDesktop.googleSignIn().catch((e) => { throw new Error(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')); });
+      cred = await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+    } else cred = await signInWithPopup(auth, p);
     const prof = await loadProfile();
     return { ...prof, suggestedName: cred.user.displayName || '' };
   });

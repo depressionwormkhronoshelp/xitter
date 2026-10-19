@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>Xitter — вход через Google</title>
+<link rel="stylesheet" href="fonts/fonts.css" />
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Nunito, system-ui, sans-serif; background: #fff4ec; color: #111; }
+  main { width: min(360px, calc(100% - 32px)); text-align: center; }
+  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -1px; }
+  p { color: #555; line-height: 1.45; margin: 0 0 24px; }
+  button { width: 100%; height: 52px; border: 0; border-radius: 26px; background: #111; color: #fff; font: inherit; font-size: 16px; font-weight: 800; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #msg { margin-top: 18px; min-height: 22px; }
+  .err { color: #d70015; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Xitter</h1>
+  <p>Вход через Google для приложения Xitter на компьютере. После входа вернитесь в приложение.</p>
+  <button id="go" type="button">Войти через Google</button>
+  <p id="msg"></p>
+</main>
+<script src="vendor/firebase.js"></script>
+<script>
+  // Приложение Xitter для ПК открывает эту страницу в обычном браузере, потому что Google не пускает
+  // входить во встроенных окнах приложений. Токен Google уходит только на 127.0.0.1 — в само приложение.
+  (() => {
+    const q = new URLSearchParams(location.search);
+    const port = Number(q.get('port'));
+    const state = q.get('state') || '';
+    const msg = document.getElementById('msg');
+    const btn = document.getElementById('go');
+    const say = (t, err) => { msg.textContent = t; msg.className = err ? 'err' : ''; };
+    if (!(port >= 1024 && port <= 65535) || !/^[a-f0-9]{32}$/.test(state)) {
+      btn.disabled = true;
+      say('Откройте эту страницу из приложения Xitter: кнопка «Google» на экране входа.', true);
+      return;
+    }
+    // те же настройки Firebase, что в backend.js; сессия только в памяти, вход на сайте Xitter не меняется
+    const app = FB.initializeApp({
+      apiKey: 'AIzaSyDnxMa7xjEqgsWq3B4KbsxXBWIuFFm6Lps',
+      authDomain: 'xittererere.firebaseapp.com',
+      projectId: 'xittererere',
+      appId: '1:231494861072:web:47ae00b55bc5066964a595',
+    }, 'desktop-login');
+    const auth = FB.initializeAuth(app, { persistence: FB.inMemoryPersistence, popupRedirectResolver: FB.browserPopupRedirectResolver });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      say('Открываю окно Google…');
+      try {
+        const res = await FB.signInWithPopup(auth, new FB.GoogleAuthProvider());
+        const cred = FB.GoogleAuthProvider.credentialFromResult(res);
+        if (!cred || !cred.idToken) throw new Error('Google не вернул токен');
+        say('Готово, возвращаю вас в приложение…');
+        location.replace(`http://127.0.0.1:${port}/done?state=${state}&id_token=${encodeURIComponent(cred.idToken)}`);
+      } catch (e) {
+        btn.disabled = false;
+        say(e.code === 'auth/popup-closed-by-user' ? 'Окно Google закрыто, попробуйте ещё раз' : `Не получилось: ${e.message || e}`, true);
+      }
+    });
+  })();
+</script>
+</body>
+</html>

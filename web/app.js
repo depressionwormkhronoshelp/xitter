@@ -315,7 +315,13 @@
   function initAuth() {
     if (!isApp && /Android/i.test(navigator.userAgent)) $('#apkLink').hidden = false;
     // во встроенном WebView всплывающие окна Google и Apple не работают
-    if (isApp) { $('#googleBtn').hidden = $('#appleBtn').hidden = true; $('.or').hidden = true; }
+    // (кроме приложения для ПК: там Google открывается в системном браузере)
+    if (isApp) {
+      const desktopGoogle = !!(window.xitterDesktop && window.xitterDesktop.googleSignIn);
+      $('#googleBtn').hidden = !desktopGoogle;
+      $('#appleBtn').hidden = true;
+      $('.or').hidden = !desktopGoogle;
+    }
 
     $('#stepEmail').addEventListener('submit', (e) => {
       e.preventDefault();

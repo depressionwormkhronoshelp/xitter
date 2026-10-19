@@ -4,6 +4,8 @@ const { app, BrowserWindow, protocol, net, shell, session, ipcMain, nativeImage 
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
+const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 
 const WEB = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web');
@@ -40,6 +42,41 @@ function createWindow() {
   win.on('closed', () => { win = null; });
   win.loadURL('app://xitter/index.html');
 }
+
+// Вход через Google: Google не пускает входить во встроенном окне, поэтому страница входа открывается
+// в обычном браузере, а токен возвращается сюда через одноразовый адрес 127.0.0.1 (как у десктопных OAuth-приложений)
+const LOGIN_PAGE = 'https://x.lozhka.fun/desktop-login.html';
+let pendingLogin = null;
+ipcMain.handle('google-sign-in', (e) => {
+  if (!win || e.sender !== win.webContents) throw new Error('Нет окна');
+  if (pendingLogin) pendingLogin.cancel();
+  return new Promise((resolve, reject) => {
+    const state = crypto.randomBytes(16).toString('hex');
+    const page = (text) => `<!doctype html><meta charset="utf-8"><title>Xitter</title><body style="font:18px system-ui;display:grid;place-items:center;height:90vh">${text}</body>`;
+    const server = http.createServer((req, res) => {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      if (u.pathname === '/ok') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(page('Готово, вернитесь в Xitter. Эту вкладку можно закрыть.')); return; }
+      if (u.pathname !== '/done' || u.searchParams.get('state') !== state || !u.searchParams.get('id_token')) { res.writeHead(404); res.end(); return; }
+      // перенаправление убирает токен из адреса и истории браузера
+      res.writeHead(303, { Location: '/ok' }); res.end();
+      finish(null, u.searchParams.get('id_token'));
+    });
+    const timer = setTimeout(() => finish(new Error('Время на вход вышло, попробуйте ещё раз')), 5 * 60e3);
+    function finish(err, token) {
+      if (!pendingLogin) return;
+      pendingLogin = null;
+      clearTimeout(timer);
+      setTimeout(() => server.close(), 2000);
+      if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+      err ? reject(err) : resolve(token);
+    }
+    pendingLogin = { cancel: () => finish(new Error('Вход отменён')) };
+    server.listen(0, '127.0.0.1', () => {
+      shell.openExternal(`${LOGIN_PAGE}?port=${server.address().port}&state=${state}`);
+    });
+    server.on('error', (err) => finish(err));
+  });
+});
 
 // значок, выбранный в настройках Xitter Plus
 ipcMain.on('set-icon', (e, url) => {
