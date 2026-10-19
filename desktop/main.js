@@ -50,9 +50,11 @@ function linuxMenuEntry() {
     fs.mkdirSync(iconDir, { recursive: true });
     fs.mkdirSync(appsDir, { recursive: true });
     fs.copyFileSync(path.join(WEB, 'icons', 'icon-512.png'), path.join(iconDir, 'xitter.png'));
+    // если Xitter запустили с --no-sandbox, ярлык тоже запускает с ним
+    const flags = process.argv.includes('--no-sandbox') ? ' --no-sandbox' : '';
     const entry = [
       '[Desktop Entry]', 'Type=Application', 'Name=Xitter', 'Comment=Мессенджер и лента',
-      `Exec="${image.replace(/["`$\\]/g, (c) => (c === '\\' ? '\\\\\\\\' : '\\\\' + c)).replace(/%/g, '%%')}" %U`, 'Icon=xitter', 'Terminal=false',
+      `Exec="${image.replace(/["`$\\]/g, (c) => (c === '\\' ? '\\\\\\\\' : '\\\\' + c)).replace(/%/g, '%%')}"${flags} %U`, 'Icon=xitter', 'Terminal=false',
       'Categories=Network;InstantMessaging;', 'StartupWMClass=Xitter', '',
     ].join('\n');
     const file = path.join(appsDir, 'xitter.desktop');
