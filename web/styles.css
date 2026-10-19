@@ -1126,3 +1126,10 @@ body.call-mini #main { top: calc(env(safe-area-inset-top, 0px) + 34px); --safe-t
   .avatar.ring-neon::after, .avatar.ring-fire::before, .avatar.ring-rainbow::before, .banner .fx, .fx-glitch .amedia,
   .gift-pattern span, .music-card.playing .eq i, [class*="anim-"] span { animation: none !important; }
 }
+
+/* юзернеймы: продажа в кошельке и карточки в маркете */
+#myUsernames { display: grid; gap: 8px; }
+.nick-row { display: flex; align-items: center; gap: 8px; }
+.nick-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nick-row .input { width: 90px; height: 34px; padding: 0 10px; }
+.nick-card .nick-art { aspect-ratio: 1; border-radius: 14px; display: grid; place-items: center; padding: 8px; background: linear-gradient(135deg, var(--fill), var(--fill-2)); font-weight: 800; font-size: 18px; word-break: break-all; text-align: center; }

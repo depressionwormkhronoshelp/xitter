@@ -41,7 +41,8 @@ service cloud.firestore {
 
     match /status/{userId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin() || buysUsername(userId) || spends(userId) || getsSalePayment(userId) || sellsGift(userId);
+      allow create, update: if isAdmin() || buysUsername(userId) || spends(userId) || getsSalePayment(userId) || sellsGift(userId)
+        || buysNick(userId) || paidForNick(userId);
       allow delete: if isAdmin() || (signedIn() && uid() == userId);
     }
 
@@ -176,6 +177,58 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/usernames/$(name)).data.uid == uid();
     }
 
+    // ---------- перепродажа юзернеймов (без комиссии) ----------
+    // Покупатель одной операцией: платит цену, получает имя в свой список, имя переписывается на него,
+    // лот удаляется, а продавец получает всю цену и теряет имя
+    function salePath(name) { return /databases/$(database)/documents/usernameSales/$(name); }
+    function namePath(name) { return /databases/$(database)/documents/usernames/$(name); }
+    function buysNick(userId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let name = after.spend.id;
+      let sale = get(salePath(name)).data;
+      return signedIn() && uid() == userId && !isBanned()
+        && after.diff(before).affectedKeys().hasOnly(['lune', 'usernames', 'spend'])
+        && after.spend.k == 'nick' && sale.seller != uid()
+        && before.get('lune', 0) >= sale.price
+        && after.lune == before.get('lune', 0) - sale.price
+        && after.usernames == before.get('usernames', []).concat([name])
+        && !existsAfter(salePath(name))
+        && getAfter(namePath(name)).data.uid == uid();
+    }
+    function paidForNick(userId) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let name = after.nickSold;
+      let sale = get(salePath(name)).data;
+      return signedIn() && uid() != userId
+        && after.diff(before).affectedKeys().hasOnly(['lune', 'usernames', 'nickSold'])
+        && sale.seller == userId
+        && name in before.get('usernames', [])
+        && after.usernames == before.get('usernames', []).removeAll([name])
+        && after.lune == before.get('lune', 0) + sale.price
+        && !existsAfter(salePath(name))
+        && getAfter(namePath(name)).data.uid == uid()
+        && getAfter(statusPath(uid())).data.spend == { 'k': 'nick', 'id': name };
+    }
+    match /usernameSales/{name} {
+      allow read: if signedIn();
+      // выставить можно только купленный (не основной) юзернейм
+      allow create: if canWrite()
+        && request.resource.data.keys().hasOnly(['seller', 'price', 'createdAt'])
+        && request.resource.data.seller == uid()
+        && request.resource.data.price is int && request.resource.data.price > 0 && request.resource.data.price <= 1000000
+        && name in st(uid()).get('usernames', [])
+        && get(namePath(name)).data.uid == uid()
+        && get(/databases/$(database)/documents/users/$(uid())).data.username != name;
+      allow update: if signedIn() && resource.data.seller == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['price'])
+        && request.resource.data.price is int && request.resource.data.price > 0 && request.resource.data.price <= 1000000;
+      // снимает продавец или админ; при покупке лот удаляет покупатель
+      allow delete: if signedIn() && (resource.data.seller == uid() || isAdmin()
+        || getAfter(namePath(name)).data.uid == uid());
+    }
+
     // Настройки приложения (TURN-сервер для звонков): читают все, меняют админы
     match /config/{key} {
       allow read: if signedIn();
@@ -199,6 +252,16 @@ service cloud.firestore {
           && !(name in st(uid()).get('usernames', [])))
       );
       allow delete: if signedIn() && resource.data.uid == uid();
+      // покупка с перепродажи: имя переходит покупателю, только если продавец получил деньги
+      allow update: if signedIn() && !isBanned()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+        && request.resource.data.uid == uid()
+        && exists(salePath(name)) && get(salePath(name)).data.seller == resource.data.uid
+        && get(/databases/$(database)/documents/users/$(resource.data.uid)).data.username != name
+        && !existsAfter(salePath(name))
+        && getAfter(statusPath(uid())).data.spend == { 'k': 'nick', 'id': name }
+        && getAfter(statusPath(resource.data.uid)).data.get('lune', 0)
+          == st(resource.data.uid).get('lune', 0) + get(salePath(name)).data.price;
     }
 
     // Файлы, разбитые на части до 1 МБ: до 20 МБ, с Plus до 50 МБ
@@ -207,14 +270,14 @@ service cloud.firestore {
       allow create: if signedIn() && !isBanned() && request.resource.data.owner == uid()
         && request.resource.data.size is int
         && request.resource.data.size <= (isPlus(uid()) ? 52428800 : 20971520);
-      allow delete: if signedIn() && resource.data.owner == uid();
+      allow delete: if signedIn() && (resource.data.owner == uid() || isAdmin());
 
       match /chunks/{i} {
         allow read: if signedIn();
         allow create: if signedIn() && !isBanned()
           && get(/databases/$(database)/documents/files/$(fileId)).data.owner == uid()
           && request.resource.data.d is string && request.resource.data.d.size() <= 1000000;
-        allow delete: if signedIn() && get(/databases/$(database)/documents/files/$(fileId)).data.owner == uid();
+        allow delete: if signedIn() && (get(/databases/$(database)/documents/files/$(fileId)).data.owner == uid() || isAdmin());
       }
     }
 

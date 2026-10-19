@@ -794,6 +794,7 @@
     const items = [];
     if (p.author === S.me.id) items.push({ label: 'Удалить пост', danger: true, fn: async () => { try { await B.deletePost(id); toast('Пост удалён'); if (S.postId === id) pop(); } catch (e) { toast(e.message); } } });
     else {
+      if (B.isAdmin) items.push({ label: 'Удалить пост (админ)', danger: true, fn: () => showActions([{ label: `Точно удалить пост ${user(p.author).name}?`, danger: true, fn: async () => { try { await B.deletePost(id); toast('Пост удалён'); if (S.postId === id) pop(); } catch (e) { toast(e.message); } } }]) });
       const on = following().has(p.author);
       items.push({ label: on ? 'Отписаться' : 'Подписаться', fn: () => toggleFollow(p.author) });
       items.push({ label: 'Написать сообщение', fn: () => messageUser(p.author) });
@@ -1370,11 +1371,39 @@
     if (!S.me) return;
     $('#walletBalance').textContent = num(S.me.lune || 0);
     $('#myUsernames').innerHTML = (S.me.usernames || []).length
-      ? S.me.usernames.map((n) => `<span class="chip-static">@${esc(n)}</span>`).join('')
+      ? S.me.usernames.map((n) => {
+        const lot = MK.nicks.find((x) => x.name === n && x.seller === S.me.id);
+        return `<div class="nick-row"><b>@${esc(n)}</b>${lot
+          ? `<span class="fine">на продаже · ☾ ${num(lot.price)}</span><button class="btn-soft small" data-unlistnick="${esc(n)}">Снять</button>`
+          : `<input class="input" type="number" min="1" inputmode="numeric" placeholder="цена" data-nickprice="${esc(n)}" /><button class="btn-soft small" data-listnick="${esc(n)}">Продать</button>`}</div>`;
+      }).join('')
       : '<span class="fine">Пока нет</span>';
     $('#buyNameBtn').textContent = `Купить за ${B.USERNAME_PRICE}`;
   }
-  function openWallet() { renderWallet(); openSheet('walletSheet'); }
+  function openWallet() {
+    renderWallet();
+    openSheet('walletSheet');
+    B.usernameMarket().then((list) => { MK.nicks = list; renderWallet(); }).catch(() => {});
+  }
+  $('#myUsernames').addEventListener('click', async (e) => {
+    const sell = e.target.closest('[data-listnick]');
+    const un = e.target.closest('[data-unlistnick]');
+    if (!sell && !un) return;
+    try {
+      if (sell) {
+        const name = sell.dataset.listnick;
+        const price = $(`[data-nickprice="${CSS.escape(name)}"]`).value;
+        await busy(sell, () => B.listUsername(name, price));
+        toast(`@${name} выставлен в маркет`);
+      } else {
+        await busy(un, () => B.unlistUsername(un.dataset.unlistnick));
+        toast('Снято с продажи');
+      }
+      MK.nicks = await B.usernameMarket();
+      renderWallet();
+      if (isOpen('marketPage')) renderMarket();
+    } catch (err) { toast(err.message); }
+  });
   $('#walletBtn').addEventListener('click', openWallet);
   $('#buyNameBtn').addEventListener('click', async (e) => {
     const name = $('#buyName').value;
@@ -1578,6 +1607,10 @@
     const grid = $('#giftGrid');
     if (GS.tab === 'gifts') {
       grid.innerHTML = Object.entries(GIFT_INFO).map(([k, [e, name]]) => `<button class="gift-tile big ${GS.sel === k ? 'sel' : ''}" data-pick="${k}"><span class="gift-art">${e}</span><span class="gname">${name}</span><span class="price">☾ ${B.GIFTS[k]}</span></button>`).join('');
+    } else if (MK.tab === 'nicks') {
+      html = MK.nicks.map((n) => `<div class="nft-card nick-card"><div class="nick-art">@${esc(n.name)}</div><b>@${esc(n.name)}</b><small>продаёт ${esc(user(n.seller).name)}</small>
+        ${n.seller === S.me.id ? `<button class="price-btn" data-unlistnick="${esc(n.name)}">Снять · ☾ ${num(n.price)}</button>` : `<button class="price-btn resale" data-buynick="${esc(n.name)}">☾ ${num(n.price)}</button>`}</div>`).join('');
+      empty = '<b>Юзернеймы не продаются</b><span>Свой купленный юзернейм можно выставить в кошельке LUNE</span>';
     } else {
       const mine = (giftCache.get(S.me.id) || { nfts: [] }).nfts;
       grid.innerHTML = mine.length
@@ -1640,14 +1673,14 @@
   });
 
   // ---------- маркет NFT ----------
-  const MK = { tab: 'shop', cols: [], resale: [] };
+  const MK = { tab: 'shop', cols: [], resale: [], nicks: [] };
   async function openMarket() {
     if (!isOpen('marketPage')) push('marketPage');
     renderMarket();
     try {
       collectionsLoaded = null;
-      const [cols, resale] = await Promise.all([ensureCollections(), B.market()]);
-      MK.cols = cols; MK.resale = resale;
+      const [cols, resale, nicks] = await Promise.all([ensureCollections(), B.market(), B.usernameMarket()]);
+      MK.cols = cols; MK.resale = resale; MK.nicks = nicks;
       await loadGifts(S.me.id);
       renderMarket();
     } catch (e) { toast(e.message); }
@@ -1667,6 +1700,10 @@
       html = MK.resale.map((n) => `<div class="nft-card" data-nft="${esc(n.id)}">${nftArtHTML(n)}<b>${esc(nftName(n))}</b><small>${esc((BACKDROPS[n.backdrop] || [''])[0])} · ${esc(user(n.owner).name)}</small>
         ${n.owner === S.me.id ? '<span class="sold">Ваш</span>' : `<button class="price-btn resale" data-buy="${esc(n.id)}">☾ ${num(n.salePrice)}</button>`}</div>`).join('');
       empty = '<b>Сейчас ничего не продаётся</b><span>Свои NFT можно выставить во вкладке «Мои NFT»</span>';
+    } else if (MK.tab === 'nicks') {
+      html = MK.nicks.map((n) => `<div class="nft-card nick-card"><div class="nick-art">@${esc(n.name)}</div><b>@${esc(n.name)}</b><small>продаёт ${esc(user(n.seller).name)}</small>
+        ${n.seller === S.me.id ? `<button class="price-btn" data-unlistnick="${esc(n.name)}">Снять · ☾ ${num(n.price)}</button>` : `<button class="price-btn resale" data-buynick="${esc(n.name)}">☾ ${num(n.price)}</button>`}</div>`).join('');
+      empty = '<b>Юзернеймы не продаются</b><span>Свой купленный юзернейм можно выставить в кошельке LUNE</span>';
     } else {
       const mine = (giftCache.get(S.me.id) || { nfts: [] }).nfts;
       html = mine.map((n) => `<div class="nft-card" data-nft="${esc(n.id)}">${nftArtHTML(n)}<b>${esc(nftName(n))}</b><small>${esc((BACKDROPS[n.backdrop] || [''])[0])}</small>${n.salePrice > 0 ? `<span class="sold">на продаже · ☾ ${num(n.salePrice)}</span>` : ''}</div>`).join('');
@@ -1695,6 +1732,27 @@
         await openMarket();
         openNft(nid);
       } catch (err) { toast(err.message); }
+      return;
+    }
+    const bn = e.target.closest('[data-buynick]');
+    if (bn) {
+      const lot = MK.nicks.find((x) => x.name === bn.dataset.buynick);
+      if (!lot) return;
+      if ((S.me.lune || 0) < lot.price) { toast(`Нужно ${lot.price} LUNE`); return; }
+      if (!canPost()) return;
+      showActions([{ label: `Купить @${lot.name} за ☾ ${num(lot.price)}`, fn: async () => {
+        try {
+          await B.buyListedUsername(lot.name);
+          toast(`@${lot.name} теперь ваш 🎉`);
+          haptic([10, 40, 10]);
+          await openMarket();
+        } catch (err) { toast(err.message); }
+      } }]);
+      return;
+    }
+    const un = e.target.closest('[data-unlistnick]');
+    if (un) {
+      try { await busy(un, () => B.unlistUsername(un.dataset.unlistnick)); toast('Снято с продажи'); await openMarket(); } catch (err) { toast(err.message); }
       return;
     }
     const bb = e.target.closest('[data-buy]');
@@ -2088,18 +2146,20 @@
       items[+b.dataset.i].fn();
     };
     const as = $('#actionSheet');
+    clearTimeout(asTimer); // подтверждение сразу после выбора: не даём закрытию спрятать новое меню
     as.classList.remove('closing');
     as.hidden = false;
     document.body.classList.add('as-open');
     setTimeout(() => box.querySelector('button')?.focus({ preventScroll: true }), 60);
     haptic(6);
   }
+  let asTimer = 0;
   function closeActions() {
     const as = $('#actionSheet');
     if (as.hidden) return;
     as.classList.add('closing');
     document.body.classList.remove('as-open');
-    setTimeout(() => { as.hidden = true; as.classList.remove('closing'); }, 280);
+    asTimer = setTimeout(() => { as.hidden = true; as.classList.remove('closing'); }, 280);
   }
   $('#asCancel').addEventListener('click', closeActions);
 

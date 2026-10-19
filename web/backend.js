@@ -360,8 +360,11 @@
     await addDoc(collection(db, 'posts'), data);
   });
 
+  // удалить пост может автор или админ; вместе с ним уходят комментарии и прикреплённый файл
   const deletePost = wrap(async (id) => {
     const p = await getDoc(doc(db, 'posts', id));
+    const comments = await getDocs(collection(db, 'posts', id, 'comments')).catch(() => null);
+    if (comments) await deleteAll(comments.docs.map((d) => d.ref)).catch(() => {});
     await deleteDoc(doc(db, 'posts', id));
     const f = p.exists() && p.data().file;
     if (f && f.id) deleteFile(f.id).catch(() => {});
@@ -676,6 +679,41 @@
       if ((st.lune || 0) < USERNAME_PRICE) throw new Error(`Нужно ${USERNAME_PRICE} LUNE`);
       t.set(nref, { uid: me });
       t.update(sref, { lune: st.lune - USERNAME_PRICE, usernames: [...(st.usernames || []), name] });
+    });
+  });
+
+  // ---------- перепродажа юзернеймов (без комиссии, как NFT) ----------
+  const NICK_MAX_PRICE = 1000000;
+  const listUsername = wrap(async (name, price) => {
+    price = Math.round(+price || 0);
+    if (!(price >= 1 && price <= NICK_MAX_PRICE)) throw new Error('Цена от 1 до 1 000 000 LUNE');
+    const st = statuses.get(me) || {};
+    if (!(st.usernames || []).includes(name)) throw new Error('Можно продать только купленный юзернейм');
+    if ((users.get(me) || {}).username === name) throw new Error('Основной юзернейм продать нельзя');
+    await setDoc(doc(db, 'usernameSales', name), { seller: me, price, createdAt: Date.now() });
+  });
+  const unlistUsername = wrap(async (name) => { await deleteDoc(doc(db, 'usernameSales', name)); });
+  const usernameMarket = wrap(async () => {
+    const snap = await getDocs(collection(db, 'usernameSales'));
+    const list = snap.docs.map((d) => ({ name: d.id, ...d.data() }));
+    list.forEach((n) => watchUser(n.seller));
+    return list.sort((a, b) => a.price - b.price);
+  });
+  const buyListedUsername = wrap(async (name) => {
+    await runTransaction(db, async (t) => {
+      const saleRef = doc(db, 'usernameSales', name), myRef = doc(db, 'status', me);
+      const [sale, my] = await Promise.all([t.get(saleRef), t.get(myRef)]);
+      if (!sale.exists()) throw new Error('Этот юзернейм уже не продаётся');
+      const { seller, price } = sale.data();
+      if (seller === me) throw new Error('Это ваш юзернейм');
+      if (myLune(my) < price) throw new Error(`Нужно ${price} LUNE`);
+      const selRef = doc(db, 'status', seller);
+      const sel = await t.get(selRef);
+      const mine = (my.exists() && my.data().usernames) || [];
+      t.update(myRef, { lune: myLune(my) - price, usernames: [...mine, name], spend: { k: 'nick', id: name } });
+      t.update(selRef, { lune: myLune(sel) + price, usernames: ((sel.data() || {}).usernames || []).filter((n) => n !== name), nickSold: name });
+      t.update(doc(db, 'usernames', name), { uid: me });
+      t.delete(saleRef);
     });
   });
 
@@ -1001,7 +1039,7 @@
     follow, markActivityRead,
     createPost, deletePost, toggleLike, subscribeComments, addComment,
     openDM, createGroup, subscribeMessages, send, markRead, typing, signal,
-    uploadFile, fileURL, buyUsername,
+    uploadFile, fileURL, buyUsername, listUsername, unlistUsername, usernameMarket, buyListedUsername,
     deleteMessage, exportMyData, deleteMyData,
     GIFTS, sendGift, sellGift, giftSellValue, getConfig, setConfig, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
     mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
