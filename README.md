@@ -12,6 +12,7 @@
 |---|---|
 | `Xitter.exe` | Windows, запускается без установки |
 | `Xitter-Setup.exe` | Установщик для Windows (ярлык в меню «Пуск») |
+| `Xitter-x86_64.AppImage` | Linux: `chmod +x Xitter-x86_64.AppImage` и запустить, после первого запуска Xitter появится в меню приложений |
 | `Xitter.apk` | Android |
 | `Xitter-unsigned.ipa` | iPhone, без подписи (см. ниже) |
 | `Xitter-web.zip` | веб-версия, можно выложить на любой хостинг |

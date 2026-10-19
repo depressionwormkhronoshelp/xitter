@@ -2,13 +2,14 @@
   "name": "xitter-desktop",
   "productName": "Xitter",
   "version": "1.0.0",
-  "description": "Xitter для Windows",
+  "description": "Xitter для Windows и Linux",
   "author": "Xitter",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable nsis --x64 --publish never"
+    "dist": "electron-builder --win portable nsis --x64 --publish never",
+    "dist:linux": "electron-builder --linux AppImage --x64 --publish never"
   },
   "devDependencies": {
     "electron": "33.2.1",
@@ -17,12 +18,42 @@
   "build": {
     "appId": "app.xitter.desktop",
     "productName": "Xitter",
-    "directories": { "output": "dist" },
-    "files": ["main.js", "preload.js", "package.json"],
-    "extraResources": [{ "from": "../web", "to": "web" }],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web",
+        "to": "web"
+      }
+    ],
     "icon": "../web/icons/icon-512.png",
-    "win": { "artifactName": "Xitter-${arch}.${ext}" },
-    "portable": { "artifactName": "Xitter.exe" },
-    "nsis": { "artifactName": "Xitter-Setup.exe", "oneClick": true, "perMachine": false }
-  }
+    "win": {
+      "artifactName": "Xitter-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Xitter.exe"
+    },
+    "nsis": {
+      "artifactName": "Xitter-Setup.exe",
+      "oneClick": true,
+      "perMachine": false
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Network",
+      "executableName": "xitter",
+      "artifactName": "Xitter-x86_64.AppImage",
+      "synopsis": "Мессенджер и лента",
+      "desktop": {
+        "StartupWMClass": "Xitter"
+      }
+    }
+  },
+  "repository": "github:depressionwormkhronoshelp/xitter"
 }

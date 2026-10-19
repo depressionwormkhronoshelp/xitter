@@ -1,7 +1,9 @@
-// Xitter для Windows: окно Electron с веб-версией из папки web.
+// Xitter для Windows и Linux: окно Electron с веб-версией из папки web.
 // Файлы отдаются по своему адресу app://xitter/, чтобы вход и данные сохранялись между запусками.
 const { app, BrowserWindow, protocol, net, shell, session, ipcMain, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { pathToFileURL } = require('url');
 
 const WEB = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..', 'web');
@@ -36,9 +38,32 @@ ipcMain.on('set-icon', (e, url) => {
   if (!img.isEmpty()) win.setIcon(img);
 });
 
+// Linux AppImage: при каждом запуске кладём ярлык в меню приложений (~/.local/share/applications).
+// Путь в ярлыке обновляется, если файл AppImage переместили
+function linuxMenuEntry() {
+  const image = process.env.APPIMAGE;
+  if (process.platform !== 'linux' || !image) return;
+  try {
+    const share = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+    const iconDir = path.join(share, 'icons', 'hicolor', '512x512', 'apps');
+    const appsDir = path.join(share, 'applications');
+    fs.mkdirSync(iconDir, { recursive: true });
+    fs.mkdirSync(appsDir, { recursive: true });
+    fs.copyFileSync(path.join(WEB, 'icons', 'icon-512.png'), path.join(iconDir, 'xitter.png'));
+    const entry = [
+      '[Desktop Entry]', 'Type=Application', 'Name=Xitter', 'Comment=Мессенджер и лента',
+      `Exec="${image.replace(/["`$\\]/g, (c) => (c === '\\' ? '\\\\\\\\' : '\\\\' + c)).replace(/%/g, '%%')}" %U`, 'Icon=xitter', 'Terminal=false',
+      'Categories=Network;InstantMessaging;', 'StartupWMClass=Xitter', '',
+    ].join('\n');
+    const file = path.join(appsDir, 'xitter.desktop');
+    if (!fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== entry) fs.writeFileSync(file, entry);
+  } catch (e) { /* без ярлыка приложение всё равно работает */ }
+}
+
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 
 app.whenReady().then(() => {
+  linuxMenuEntry();
   protocol.handle('app', (req) => {
     const rel = decodeURIComponent(new URL(req.url).pathname).replace(/^\/+/, '') || 'index.html';
     const file = path.normalize(path.join(WEB, rel));
