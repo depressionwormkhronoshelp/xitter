@@ -14,6 +14,13 @@ protocol.registerSchemesAsPrivileged([
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
+// если видеодрайвер падал, со следующего запуска рисуем без видеокарты (Linux с проблемными драйверами)
+const NO_GPU = path.join(app.getPath('userData'), 'no-gpu');
+if (fs.existsSync(NO_GPU)) app.disableHardwareAcceleration();
+app.on('child-process-gone', (_e, d) => {
+  if (d.type === 'GPU' && d.reason !== 'clean-exit') try { fs.writeFileSync(NO_GPU, d.reason); } catch (e) { /* не страшно */ }
+});
+
 let win;
 function createWindow() {
   win = new BrowserWindow({
@@ -28,6 +35,9 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // упала страница — перезагружаем, а не оставляем пустое окно
+  win.webContents.on('render-process-gone', (_e, d) => { if (d.reason !== 'clean-exit' && !win.isDestroyed()) win.reload(); });
+  win.on('closed', () => { win = null; });
   win.loadURL('app://xitter/index.html');
 }
 
@@ -62,7 +72,13 @@ function linuxMenuEntry() {
   } catch (e) { /* без ярлыка приложение всё равно работает */ }
 }
 
-app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+// повторный запуск показывает уже открытое окно, а если его нет — открывает новое
+app.on('second-instance', () => {
+  if (!win) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
 
 app.whenReady().then(() => {
   linuxMenuEntry();
