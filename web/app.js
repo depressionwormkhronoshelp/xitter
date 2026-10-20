@@ -2043,6 +2043,7 @@
     if (!$('#turnPass').matches(':focus')) $('#turnPass').value = t.credential || '';
     $('#adminStats').innerHTML = cards.map(([t, v]) => `<div class="stat"><b>${num(v)}</b><span>${t}</span></div>`).join('');
     renderAdminRates();
+    $('#driveBox').hidden = !B.isOwner;
     $('#adminOverview').hidden = ADMIN.tab !== 'overview';
     $('#adminUsersBox').hidden = ADMIN.tab !== 'users';
     $('#adminNftBox').hidden = ADMIN.tab !== 'nft';
@@ -2081,6 +2082,17 @@
     openSheet('adminUserSheet');
   });
   const fmtDate = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  $('#driveGo').addEventListener('click', async () => {
+    const btn = $('#driveGo'), msg = $('#driveMsg');
+    btn.classList.add('loading');
+    try {
+      const r = await B.backupToDrive((t) => { msg.textContent = t; });
+      msg.textContent = `Готово${r.email ? ` (Диск ${r.email})` : ''}: скопировано ${r.copied}, уже было ${r.already}` + (r.skipped ? `, ещё загружаются ${r.skipped}` : '') + `. Всего публичных файлов: ${r.total}.`;
+    } catch (e) {
+      msg.textContent = '';
+      toast(e.code === 'auth/popup-closed-by-user' ? 'Окно Google закрыто' : e.message);
+    } finally { btn.classList.remove('loading'); }
+  });
   function renderAdminRates() {
     const rs = ADMIN.rates || [];
     const avg = rs.length ? rs.reduce((n, r) => n + r.stars, 0) / rs.length : 0;

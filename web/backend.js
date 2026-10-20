@@ -14,7 +14,7 @@
   const {
     initializeApp,
     getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, connectAuthEmulator, deleteUser,
-    GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithCredential,
+    GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithCredential, initializeAuth, inMemoryPersistence, browserPopupRedirectResolver,
     initializeFirestore, connectFirestoreEmulator, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc, deleteField,
     collection, query, where, orderBy, limit, limitToLast, onSnapshot, increment, writeBatch, runTransaction,
     arrayUnion, arrayRemove, serverTimestamp, getCountFromServer, Timestamp,
@@ -717,6 +717,97 @@
     });
   });
 
+  // ---------- копия публичных файлов в Google Диск владельца ----------
+  // Своего сервера нет, поэтому копирует браузер владельца: вход в любой Google-аккаунт с доступом к Диску
+  // (только к файлам, которые создал сам Xitter), папка «Xitter», уже скопированные файлы пропускаются.
+  const DRIVE = 'https://www.googleapis.com/drive/v3', DRIVE_UP = 'https://www.googleapis.com/upload/drive/v3';
+  let drive = null; // { token, until }
+  // Диск может быть на любом Google-аккаунте: вход идёт в отдельном экземпляре Firebase Auth
+  // только в памяти, поэтому основной вход в Xitter не меняется
+  let driveAuth = null;
+  async function driveToken() {
+    if (drive && drive.until > Date.now()) return drive.token;
+    if (!driveAuth) driveAuth = initializeAuth(initializeApp(firebaseConfig, 'drive'), { persistence: inMemoryPersistence, popupRedirectResolver: browserPopupRedirectResolver });
+    const p = new GoogleAuthProvider();
+    p.addScope('https://www.googleapis.com/auth/drive.file');
+    p.setCustomParameters({ prompt: 'select_account' });
+    const res = await signInWithPopup(driveAuth, p);
+    const cred = GoogleAuthProvider.credentialFromResult(res);
+    signOut(driveAuth).catch(() => {});
+    if (!cred || !cred.accessToken) throw new Error('Google не дал доступ к Диску');
+    drive = { token: cred.accessToken, until: Date.now() + 50 * 60e3, email: res.user.email };
+    return drive.token;
+  }
+  async function driveFetch(url, opts = {}) {
+    const r = await fetch(url, { ...opts, headers: { Authorization: `Bearer ${await driveToken()}`, ...(opts.headers || {}) } });
+    if (r.status === 401) drive = null;
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      const msg = (j.error && j.error.message) || `ошибка ${r.status}`;
+      throw new Error(/has not been used|is disabled/.test(msg) ? 'В Google Cloud выключен Google Drive API для проекта xittererere: включите его и повторите' : `Google Диск: ${msg}`);
+    }
+    return r;
+  }
+  async function driveFolder() {
+    const q = encodeURIComponent("name = 'Xitter' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+    const found = await (await driveFetch(`${DRIVE}/files?q=${q}&fields=files(id)`)).json();
+    if (found.files.length) return found.files[0].id;
+    const made = await (await driveFetch(`${DRIVE}/files?fields=id`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Xitter', mimeType: 'application/vnd.google-apps.folder' }),
+    })).json();
+    return made.id;
+  }
+  async function driveDone(folder) {
+    const ids = new Set();
+    let page = '';
+    do {
+      const q = encodeURIComponent(`'${folder}' in parents and trashed = false`);
+      const r = await (await driveFetch(`${DRIVE}/files?q=${q}&pageSize=1000&fields=nextPageToken,files(appProperties)${page ? `&pageToken=${page}` : ''}`)).json();
+      r.files.forEach((f) => f.appProperties && f.appProperties.xid && ids.add(f.appProperties.xid));
+      page = r.nextPageToken || '';
+    } while (page);
+    return ids;
+  }
+  // только публичные файлы: вложения постов, оформление профилей и музыка, картинки NFT.
+  // Вложения личных чатов не копируются и удаляются через 7 дней, как обычно.
+  async function publicFileIds() {
+    const [ps, us, cs] = await Promise.all([getDocs(collection(db, 'posts')), getDocs(collection(db, 'users')), getDocs(collection(db, 'nftCollections'))]);
+    const ids = new Set();
+    const add = (x) => x && x.id && ids.add(x.id);
+    ps.forEach((d) => add(d.data().file));
+    us.forEach((d) => { const u = d.data(), sty = u.style || {}; add(sty.banner); add(sty.avatarMedia); add(u.music); });
+    cs.forEach((d) => add(d.data().image));
+    return ids;
+  }
+  const backupToDrive = wrap(async (onProgress) => {
+    if (!isOwner()) throw new Error('Копировать в Диск может только владелец');
+    const say = (t) => onProgress && onProgress(t);
+    say('Вход в Google…');
+    const folder = await driveFolder();
+    say('Смотрю, что уже скопировано…');
+    const [done, all, pubIds] = await Promise.all([driveDone(folder), getDocs(collection(db, 'files')), publicFileIds()]);
+    const pub = all.docs.filter((d) => pubIds.has(d.id));
+    const todo = pub.filter((d) => !done.has(d.id));
+    let copied = 0, skipped = 0;
+    for (const f of todo) {
+      const m = f.data();
+      say(`Копирую ${copied + skipped + 1} из ${todo.length}: ${m.name}`);
+      const snap = await getDocs(collection(db, 'files', f.id, 'chunks'));
+      if (snap.size < m.chunks) { skipped++; continue; } // ещё загружается
+      const blob = new Blob(snap.docs.sort((a, b) => a.id.localeCompare(b.id)).map((d) => fromB64(d.data().d)), { type: m.type });
+      const owner = (users.get(m.owner) || {}).username || m.owner;
+      const day = new Date(m.createdAt || Date.now()).toISOString().slice(0, 10);
+      const start = await driveFetch(`${DRIVE_UP}/files?uploadType=resumable`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': m.type },
+        body: JSON.stringify({ name: `${day} @${owner} ${m.name}`, parents: [folder], appProperties: { xid: f.id, owner: m.owner } }),
+      });
+      await driveFetch(start.headers.get('Location'), { method: 'PUT', headers: { 'Content-Type': m.type }, body: blob });
+      copied++;
+    }
+    return { copied, skipped, already: pub.length - todo.length, total: pub.length, email: drive && drive.email };
+  });
+
   // ---------- оценка приложения: одна на пользователя, повторная отправка заменяет прежнюю ----------
   const sendFeedback = wrap(async (stars, text) => {
     await setDoc(doc(db, 'feedback', me), {
@@ -1060,7 +1151,7 @@
     deleteMessage, exportMyData, deleteMyData,
     GIFTS, sendGift, sellGift, giftSellValue, getConfig, setConfig, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
     mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
-    sendFeedback, myFeedback, adminFeedback,
+    sendFeedback, myFeedback, adminFeedback, backupToDrive,
     USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT, FILE_TTL_DAYS,
     get uid() { return me; },
     get isAdmin() { return amAdmin || isOwner(); },
