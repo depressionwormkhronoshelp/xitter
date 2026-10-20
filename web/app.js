@@ -2087,7 +2087,7 @@
     btn.classList.add('loading');
     try {
       const r = await B.backupToDrive((t) => { msg.textContent = t; });
-      msg.textContent = `Готово${r.email ? ` (Диск ${r.email})` : ''}: скопировано ${r.copied}, уже было ${r.already}` + (r.skipped ? `, ещё загружаются ${r.skipped}` : '') + `. Всего публичных файлов: ${r.total}.`;
+      msg.textContent = `Готово${r.email ? ` (Диск ${r.email})` : ''}: скопировано ${r.copied}, уже было ${r.already}` + (r.skipped ? `, ещё загружаются ${r.skipped}` : '') + `. Всего: ${r.total}.`;
     } catch (e) {
       msg.textContent = '';
       toast(e.code === 'auth/popup-closed-by-user' ? 'Окно Google закрыто' : e.message);

@@ -771,41 +771,77 @@
   }
   // только публичные файлы: вложения постов, оформление профилей и музыка, картинки NFT.
   // Вложения личных чатов не копируются и удаляются через 7 дней, как обычно.
-  async function publicFileIds() {
+  async function publicData() {
     const [ps, us, cs] = await Promise.all([getDocs(collection(db, 'posts')), getDocs(collection(db, 'users')), getDocs(collection(db, 'nftCollections'))]);
-    const ids = new Set();
+    const ids = new Set(), names = new Map();
     const add = (x) => x && x.id && ids.add(x.id);
     ps.forEach((d) => add(d.data().file));
-    us.forEach((d) => { const u = d.data(), sty = u.style || {}; add(sty.banner); add(sty.avatarMedia); add(u.music); });
+    us.forEach((d) => { const u = d.data(), sty = u.style || {}; names.set(d.id, u); add(sty.banner); add(sty.avatarMedia); add(u.music); });
     cs.forEach((d) => add(d.data().image));
-    return ids;
+    return { ids, names, posts: ps.docs };
   }
+  async function driveUpload(folder, name, type, body, appProperties) {
+    const start = await driveFetch(`${DRIVE_UP}/files?uploadType=resumable`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': type },
+      body: JSON.stringify({ name, parents: [folder], appProperties }),
+    });
+    await driveFetch(start.headers.get('Location'), { method: 'PUT', headers: { 'Content-Type': type }, body });
+  }
+  // картинка поста хранится как data:-ссылка (обычно JPEG) — перегоняем в PNG
+  async function toPNG(dataUrl) {
+    const bmp = await createImageBitmap(await (await fetch(dataUrl)).blob());
+    const c = document.createElement('canvas');
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext('2d').drawImage(bmp, 0, 0);
+    return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('Не удалось сделать PNG'))), 'image/png'));
+  }
+  const dayOf = (t) => new Date(t || Date.now()).toISOString().slice(0, 10);
+  const safeName = (t) => String(t || '').replace(/[\\/:*?"<>|\s]+/g, ' ').trim().slice(0, 40);
   const backupToDrive = wrap(async (onProgress) => {
     if (!isOwner()) throw new Error('Копировать в Диск может только владелец');
     const say = (t) => onProgress && onProgress(t);
     say('Вход в Google…');
     const folder = await driveFolder();
     say('Смотрю, что уже скопировано…');
-    const [done, all, pubIds] = await Promise.all([driveDone(folder), getDocs(collection(db, 'files')), publicFileIds()]);
-    const pub = all.docs.filter((d) => pubIds.has(d.id));
-    const todo = pub.filter((d) => !done.has(d.id));
+    const [done, all, pubData] = await Promise.all([driveDone(folder), getDocs(collection(db, 'files')), publicData()]);
+    const uname = (uid) => (pubData.names.get(uid) || {}).username || uid;
+    // задачи: публичные файлы, текст каждого поста (.txt) и фото из поста (.png)
+    const jobs = [];
+    all.docs.filter((d) => pubData.ids.has(d.id)).forEach((f) => jobs.push({ xid: f.id, kind: 'file', f }));
+    pubData.posts.forEach((p) => {
+      jobs.push({ xid: `post:${p.id}`, kind: 'post', p });
+      if (p.data().image) jobs.push({ xid: `post-img:${p.id}`, kind: 'img', p });
+    });
+    const todo = jobs.filter((j) => !done.has(j.xid));
     let copied = 0, skipped = 0;
-    for (const f of todo) {
-      const m = f.data();
-      say(`Копирую ${copied + skipped + 1} из ${todo.length}: ${m.name}`);
-      const snap = await getDocs(collection(db, 'files', f.id, 'chunks'));
-      if (snap.size < m.chunks) { skipped++; continue; } // ещё загружается
-      const blob = new Blob(snap.docs.sort((a, b) => a.id.localeCompare(b.id)).map((d) => fromB64(d.data().d)), { type: m.type });
-      const owner = (users.get(m.owner) || {}).username || m.owner;
-      const day = new Date(m.createdAt || Date.now()).toISOString().slice(0, 10);
-      const start = await driveFetch(`${DRIVE_UP}/files?uploadType=resumable`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': m.type },
-        body: JSON.stringify({ name: `${day} @${owner} ${m.name}`, parents: [folder], appProperties: { xid: f.id, owner: m.owner } }),
-      });
-      await driveFetch(start.headers.get('Location'), { method: 'PUT', headers: { 'Content-Type': m.type }, body: blob });
+    for (const j of todo) {
+      say(`Копирую ${copied + skipped + 1} из ${todo.length}`);
+      if (j.kind === 'file') {
+        const m = j.f.data();
+        const snap = await getDocs(collection(db, 'files', j.f.id, 'chunks'));
+        if (snap.size < m.chunks) { skipped++; continue; } // ещё загружается
+        const blob = new Blob(snap.docs.sort((a, b) => a.id.localeCompare(b.id)).map((d) => fromB64(d.data().d)), { type: m.type });
+        await driveUpload(folder, `${dayOf(m.createdAt)} @${uname(m.owner)} ${m.name}`, m.type, blob, { xid: j.xid, owner: m.owner });
+      } else {
+        const d = j.p.data(), u = pubData.names.get(d.author) || {};
+        const base = `${dayOf(d.createdAt)} @${uname(d.author)} пост ${safeName(d.text) || j.p.id}`;
+        if (j.kind === 'post') {
+          const txt = [
+            `${u.name || ''} @${uname(d.author)}`.trim(),
+            new Date(d.createdAt || 0).toLocaleString('ru-RU'),
+            `Лайков: ${(d.likes || []).length} · Комментариев: ${d.commentCount || 0}`,
+            ...(d.image ? ['Фото: в файле .png с тем же названием'] : []),
+            ...(d.file ? [`Файл: ${d.file.name}`] : []),
+            '', d.text || '',
+          ].join('\r\n');
+          await driveUpload(folder, `${base}.txt`, 'text/plain', new Blob(['\ufeff' + txt], { type: 'text/plain' }), { xid: j.xid, owner: d.author });
+        } else {
+          await driveUpload(folder, `${base}.png`, 'image/png', await toPNG(d.image), { xid: j.xid, owner: d.author });
+        }
+      }
       copied++;
     }
-    return { copied, skipped, already: pub.length - todo.length, total: pub.length, email: drive && drive.email };
+    return { copied, skipped, already: jobs.length - todo.length, total: jobs.length, email: drive && drive.email };
   });
 
   // ---------- оценка приложения: одна на пользователя, повторная отправка заменяет прежнюю ----------
