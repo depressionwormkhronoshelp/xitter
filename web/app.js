@@ -483,6 +483,7 @@
     switchTab('feed', true);
     renderMe();
     loadCallConfig();
+    setTimeout(initRate, 2000);
     B.start({
       onChats: (chats) => { onChats(chats, firstChats); firstChats = false; },
       onMe: (u) => { S.me = u; renderMe(); schedule(); },
@@ -492,6 +493,47 @@
       onUsers: () => schedule(),
     });
   }
+
+  // ---------- оценка приложения: плашка сверху ленты ----------
+  const RATE_LATER = 'xitter.rateLater';
+  let rateStars = 0;
+  async function initRate() {
+    const card = $('#rateCard');
+    card.hidden = true;
+    let later = 0;
+    try { later = Number(localStorage.getItem(RATE_LATER)) || 0; } catch {}
+    if (later > Date.now() || !B.uid) return;
+    const mine = await B.myFeedback().catch(() => null);
+    if (mine || !S.started) return;
+    setRateStars(0);
+    $('#rateText').value = '';
+    card.classList.remove('done');
+    card.hidden = false;
+  }
+  function setRateStars(n) {
+    rateStars = n;
+    $$('#rateStars [data-star]').forEach((b) => b.classList.toggle('on', Number(b.dataset.star) <= n));
+    $('#rateHint').textContent = n ? ['', 'Совсем плохо', 'Так себе', 'Нормально', 'Хорошо', 'Отлично!'][n] : 'Поставьте от 1 до 5 звёзд';
+  }
+  $('#rateStars').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-star]');
+    if (b) setRateStars(Number(b.dataset.star));
+  });
+  $('#rateLater').addEventListener('click', () => {
+    try { localStorage.setItem(RATE_LATER, String(Date.now() + 7 * 864e5)); } catch {}
+    $('#rateCard').hidden = true;
+  });
+  $('#rateSend').addEventListener('click', async () => {
+    if (!rateStars) { toast('Поставьте оценку звёздами'); return; }
+    const btn = $('#rateSend');
+    btn.classList.add('loading');
+    try {
+      await B.sendFeedback(rateStars, $('#rateText').value);
+      const card = $('#rateCard');
+      card.classList.add('done');
+      setTimeout(() => { card.hidden = true; }, 1800);
+    } catch (e) { toast(e.message); } finally { btn.classList.remove('loading'); }
+  });
 
   // перерисовка всего, что видно, не чаще раза за кадр
   let raf = 0;
@@ -1981,8 +2023,8 @@
   $('#adminRefresh').addEventListener('click', () => loadAdmin());
   async function loadAdmin() {
     try {
-      const [stats, users] = await Promise.all([B.adminStats(), B.adminUsers()]);
-      ADMIN.stats = stats; ADMIN.users = users;
+      const [stats, users, rates] = await Promise.all([B.adminStats(), B.adminUsers(), B.adminFeedback().catch(() => [])]);
+      ADMIN.stats = stats; ADMIN.users = users; ADMIN.rates = rates;
       renderAdmin();
     } catch (e) { toast(e.message); }
   }
@@ -2000,6 +2042,7 @@
     if (!$('#turnUser').matches(':focus')) $('#turnUser').value = t.username || '';
     if (!$('#turnPass').matches(':focus')) $('#turnPass').value = t.credential || '';
     $('#adminStats').innerHTML = cards.map(([t, v]) => `<div class="stat"><b>${num(v)}</b><span>${t}</span></div>`).join('');
+    renderAdminRates();
     $('#adminOverview').hidden = ADMIN.tab !== 'overview';
     $('#adminUsersBox').hidden = ADMIN.tab !== 'users';
     $('#adminNftBox').hidden = ADMIN.tab !== 'nft';
@@ -2038,6 +2081,19 @@
     openSheet('adminUserSheet');
   });
   const fmtDate = (ts) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  function renderAdminRates() {
+    const rs = ADMIN.rates || [];
+    const avg = rs.length ? rs.reduce((n, r) => n + r.stars, 0) / rs.length : 0;
+    const starsOf = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+    $('#adminRates').innerHTML = `<h3>Оценки приложения</h3>
+      <div class="stat-grid" style="padding:0"><div class="stat"><b>${rs.length ? avg.toFixed(1).replace('.', ',') : '—'}</b><span>Средняя оценка</span></div><div class="stat"><b>${num(rs.length)}</b><span>Оценок</span></div></div>
+      ${rs.length ? '' : '<p class="fine">Пока никто не оценил</p>'}
+      ${rs.map((r) => {
+        const u = ADMIN.users.find((x) => x.id === r.uid);
+        return `<div class="rate-item"><div class="who"><b>${esc(u ? u.name : 'Пользователь')}${u ? ` <span>@${esc(u.username)}</span>` : ''}</b><span>${new Date(r.createdAt).toLocaleDateString('ru-RU')}</span></div>
+          <div class="st">${starsOf(r.stars)}</div>${r.text ? `<p>${esc(r.text)}</p>` : ''}</div>`;
+      }).join('')}`;
+  }
   function renderAdminUser() {
     const u = ADMIN.users.find((x) => x.id === ADMIN.sel);
     if (!u) return;

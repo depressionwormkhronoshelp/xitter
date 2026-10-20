@@ -717,6 +717,21 @@
     });
   });
 
+  // ---------- оценка приложения: одна на пользователя, повторная отправка заменяет прежнюю ----------
+  const sendFeedback = wrap(async (stars, text) => {
+    await setDoc(doc(db, 'feedback', me), {
+      stars, text: String(text || '').trim().slice(0, 1000), createdAt: Date.now(), build: (window.XITTER_BUILD || {}).run || 0,
+    });
+  });
+  const myFeedback = wrap(async () => {
+    const s = await getDoc(doc(db, 'feedback', me));
+    return s.exists() ? s.data() : null;
+  });
+  const adminFeedback = wrap(async () => {
+    const s = await getDocs(query(collection(db, 'feedback'), orderBy('createdAt', 'desc'), limit(300)));
+    return s.docs.map((d) => ({ uid: d.id, ...d.data() }));
+  });
+
   const adminStats = wrap(async () => {
     const [u, a] = await Promise.all([getCountFromServer(collection(db, 'users')), getCountFromServer(collection(db, 'admins'))]);
     return { users: u.data().count, admins: a.data().count };
@@ -831,8 +846,8 @@
 
   // все мои данные в одном JSON (то, что хранится о пользователе)
   const exportMyData = wrap(async () => {
-    const [u, st, posts, gotGifts, sentGifts, nfts, actTo, actFrom, files, callsFrom, callsTo] = await Promise.all([
-      getDoc(doc(db, 'users', me)), getDoc(doc(db, 'status', me)),
+    const [u, st, fb, posts, gotGifts, sentGifts, nfts, actTo, actFrom, files, callsFrom, callsTo] = await Promise.all([
+      getDoc(doc(db, 'users', me)), getDoc(doc(db, 'status', me)), getDoc(doc(db, 'feedback', me)).catch(() => null),
       getDocs(query(collection(db, 'posts'), where('author', '==', me))),
       getDocs(query(collection(db, 'gifts'), where('to', '==', me))), getDocs(query(collection(db, 'gifts'), where('from', '==', me))),
       getDocs(query(collection(db, 'nfts'), where('owner', '==', me))),
@@ -862,6 +877,7 @@
       giftsReceived: dataOf(gotGifts), giftsSent: dataOf(sentGifts), nfts: dataOf(nfts),
       activity: [...dataOf(actTo), ...dataOf(actFrom)],
       files: dataOf(files), calls: [...dataOf(callsFrom), ...dataOf(callsTo)],
+      feedback: fb && fb.exists() ? fb.data() : null,
     });
   });
 
@@ -915,6 +931,7 @@
       getDocs(query(collection(db, 'calls'), where('from', '==', me))), getDocs(query(collection(db, 'calls'), where('to', '==', me))),
     ]);
     await deleteAll([...actTo.docs, ...actFrom.docs].map((d) => d.ref));
+    await deleteDoc(doc(db, 'feedback', me)).catch(() => {});
     for (const cl of [...callsFrom.docs, ...callsTo.docs]) {
       const cands = await getDocs(collection(db, 'calls', cl.id, 'candidates'));
       await deleteAll([...cands.docs.map((d) => d.ref), cl.ref]);
@@ -1043,6 +1060,7 @@
     deleteMessage, exportMyData, deleteMyData,
     GIFTS, sendGift, sellGift, giftSellValue, getConfig, setConfig, userGifts, listCollections, collection: collection_, createCollection, setCollectionActive,
     mintNFT, setSalePrice, transferNFT, buyNFT, market, findUserByName, adminStats, adminUsers, adminUpdate, setAdmin,
+    sendFeedback, myFeedback, adminFeedback,
     USERNAME_PRICE, FILE_LIMIT, PLUS_FILE_LIMIT, FILE_TTL_DAYS,
     get uid() { return me; },
     get isAdmin() { return amAdmin || isOwner(); },

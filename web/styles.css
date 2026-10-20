@@ -1060,6 +1060,28 @@ button.tg-row:active { background: var(--fill-2); }
 .check-row input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--ink); flex: none; }
 .check-row small { display: block; font-size: 12px; font-weight: 400; color: var(--text-2); margin-top: 2px; }
 .check-row:has(input:disabled) { opacity: 0.5; }
+/* ---------- оценка приложения ---------- */
+.rate-card { display: grid; gap: 12px; margin: 12px 16px 6px; padding: 16px; border-radius: 18px; background: var(--fill); animation: rise 0.4s var(--ease-out) both; }
+.rate-head { display: grid; gap: 2px; }
+.rate-head b { font-size: 17px; }
+.rate-head .fine { margin: 0; }
+.rate-stars { display: flex; gap: 6px; }
+.rate-stars button { width: 40px; height: 40px; display: grid; place-items: center; transition: transform 0.25s var(--bounce); }
+.rate-stars button:active { transform: scale(0.85); }
+.rate-stars svg { width: 32px; height: 32px; fill: none; stroke: var(--text-2); stroke-width: 1.6; stroke-linejoin: round; transition: fill 0.15s, stroke 0.15s; }
+.rate-stars button.on svg { fill: var(--text); stroke: var(--text); }
+.rate-text { height: auto; min-height: 76px; padding: 12px 14px; resize: none; line-height: 1.4; }
+.rate-row { display: flex; gap: 10px; }
+.rate-row > * { flex: 1; }
+.rate-done { text-align: center; padding: 6px 0; font-weight: 700; }
+.rate-card:not(.done) .rate-done, .rate-card.done > :not(.rate-done) { display: none; }
+.rate-admin { margin: 0 16px 14px; display: grid; gap: 8px; }
+.rate-admin h3 { margin: 4px 0 2px; font-size: 16px; }
+.rate-item { padding: 12px 14px; border-radius: 14px; background: var(--fill); display: grid; gap: 4px; }
+.rate-item .who { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.rate-item .who span { color: var(--text-2); }
+.rate-item p { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 15px; }
+.rate-item .st { letter-spacing: 1px; }
 .turn-box { display: grid; gap: 10px; margin: 6px 16px 24px; padding: 14px; border-radius: 16px; background: var(--fill); }
 .turn-box h3 { margin: 0; font-size: 16px; }
 .turn-box .fine { margin: 0; }

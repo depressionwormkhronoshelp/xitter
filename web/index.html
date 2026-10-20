@@ -112,6 +112,13 @@
               <button class="icon-btn bar-side right" id="openChats" aria-label="Сообщения"><svg><use href="#i-send"/></svg><i class="badge" id="dmBadge" hidden></i></button>
             </header>
             <div class="scroller" id="feedScroll">
+              <div class="rate-card" id="rateCard" hidden>
+                <div class="rate-head"><b>Оцените Xitter</b><span class="fine" id="rateHint">Поставьте от 1 до 5 звёзд</span></div>
+                <div class="rate-stars" id="rateStars"><button type="button" data-star="1" aria-label="1 из 5"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg></button><button type="button" data-star="2" aria-label="2 из 5"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg></button><button type="button" data-star="3" aria-label="3 из 5"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg></button><button type="button" data-star="4" aria-label="4 из 5"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg></button><button type="button" data-star="5" aria-label="5 из 5"><svg viewBox="0 0 24 24"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg></button></div>
+                <textarea class="input rate-text" id="rateText" maxlength="1000" rows="3" placeholder="Оставьте комментарий (необязательно)"></textarea>
+                <div class="rate-row"><button class="btn-soft" id="rateLater" type="button">Позже</button><button class="btn-black" id="rateSend" type="button">Отправить</button></div>
+                <div class="rate-done">Спасибо за оценку!</div>
+              </div>
               <div id="feedList"></div>
               <div class="empty" id="feedEmpty" hidden></div>
             </div>
@@ -254,6 +261,7 @@
           <div class="scroller" id="adminView">
             <div id="adminOverview">
               <div class="stat-grid" id="adminStats"></div>
+              <div class="rate-admin" id="adminRates"></div>
               <div class="turn-box">
                 <h3>Звонки: TURN-сервер</h3>
                 <p class="fine">Нужен, чтобы звонки соединялись между разными сетями (мобильный интернет, чужой Wi-Fi). Если поля пустые, используется бесплатный Open Relay. Свой сервер можно бесплатно получить на metered.ca или поднять coturn.</p>

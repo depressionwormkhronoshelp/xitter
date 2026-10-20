@@ -229,6 +229,16 @@ service cloud.firestore {
         || getAfter(namePath(name)).data.uid == uid());
     }
 
+    // Оценки приложения (1–5 звёзд и комментарий): каждый пишет только свою, читают автор и админы
+    match /feedback/{userId} {
+      allow read: if signedIn() && (uid() == userId || isAdmin());
+      allow create, update: if signedIn() && uid() == userId
+        && request.resource.data.keys().hasOnly(['stars', 'text', 'createdAt', 'build'])
+        && request.resource.data.stars is int && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
+        && request.resource.data.text is string && request.resource.data.text.size() <= 1000;
+      allow delete: if signedIn() && (uid() == userId || isAdmin());
+    }
+
     // Настройки приложения (TURN-сервер для звонков): читают все, меняют админы
     match /config/{key} {
       allow read: if signedIn();
