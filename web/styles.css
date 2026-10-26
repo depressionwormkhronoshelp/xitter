@@ -155,7 +155,10 @@ b { font-weight: 600; }
 .avatar.online .dot { display: block; }
 
 /* ---------- вход ---------- */
-#auth { overflow-y: auto; }
+#auth {
+  overflow-x: hidden !important; /* Намертво блокирует горизонтальный скролл на экране входа */
+  position: relative;
+}
 .auth-bg { position: absolute; inset: 0; background: var(--peach); }
 .auth-bg::after {
   content: ""; position: absolute; left: -20%; right: -20%; top: -10%; height: 55%;
